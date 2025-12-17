@@ -140,7 +140,7 @@ export function MessageBubble({
             </div>
           )}
           {message.text && (
-            <p className="break-words whitespace-pre-wrap">{message.text}</p>
+            <p className="wrap-break-word whitespace-pre-wrap">{message.text}</p>
           )}
         </div>
         {isCurrentUser && onDelete && (
