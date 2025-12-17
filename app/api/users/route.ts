@@ -16,7 +16,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST - Create a new user
+// POST - Create a new user or return existing user with same name
 export async function POST(request: NextRequest) {
   try {
     const { name } = await request.json();
@@ -29,8 +29,25 @@ export async function POST(request: NextRequest) {
     }
 
     const db = await getDb();
+    const trimmedName = name.trim();
+
+    // Check if user with this name already exists
+    const existingUser = await db.collection('users').findOne({
+      name: trimmedName,
+    });
+
+    if (existingUser) {
+      // Return existing user
+      return NextResponse.json({
+        _id: existingUser._id.toString(),
+        name: existingUser.name,
+        createdAt: existingUser.createdAt,
+      });
+    }
+
+    // Create new user if doesn't exist
     const user = {
-      name: name.trim(),
+      name: trimmedName,
       createdAt: new Date(),
     };
 
