@@ -32,6 +32,8 @@ interface MessageBubbleProps {
   isNoteMode?: boolean; // When true, show as centered note
   showSeenDelivered?: boolean; // Show seen indicators
   isDeleting?: boolean; // Show loading state while deleting
+  isLastMessage?: boolean; // If this is the last message in the list
+  onTripleClick?: () => void; // Handler for triple-click to toggle chat mode
 }
 
 export function MessageBubble({
@@ -42,6 +44,8 @@ export function MessageBubble({
   isNoteMode = false,
   showSeenDelivered = false,
   isDeleting = false,
+  isLastMessage = false,
+  onTripleClick,
 }: MessageBubbleProps) {
   const isCurrentUser = message.senderUserId === currentUserId;
   const alignment = isNoteMode
@@ -55,6 +59,7 @@ export function MessageBubble({
     ? "bg-muted text-muted-foreground"
     : "bg-muted text-muted-foreground";
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [clickTimes, setClickTimes] = useState<number[]>([]);
 
   const formatTime = (date: string | Date) => {
     const d = typeof date === "string" ? new Date(date) : date;
@@ -86,6 +91,23 @@ export function MessageBubble({
     }
   };
 
+  const handleClick = () => {
+    if (!isLastMessage || !onTripleClick) return;
+
+    const now = Date.now();
+    const newClickTimes = [...clickTimes, now].filter(
+      (time) => now - time < 500
+    ); // Keep clicks within 500ms window
+
+    setClickTimes(newClickTimes);
+
+    if (newClickTimes.length >= 3) {
+      // Triple-click detected
+      onTripleClick();
+      setClickTimes([]); // Reset after triggering
+    }
+  };
+
   return (
     <div
       className={`flex flex-col mb-4 group w-full ${
@@ -95,6 +117,7 @@ export function MessageBubble({
           ? "items-end"
           : "items-start"
       }`}
+      onClick={handleClick}
     >
       <div
         className={`flex items-start ${
@@ -127,7 +150,10 @@ export function MessageBubble({
                       variant="secondary"
                       size="icon"
                       className="h-8 w-8 bg-background/90 hover:bg-background shadow-md"
-                      onClick={handleDownloadImage}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDownloadImage();
+                      }}
                     >
                       <Download className="h-4 w-4" />
                     </Button>
@@ -150,7 +176,10 @@ export function MessageBubble({
                 variant="ghost"
                 size="icon"
                 className="h-6 w-6 text-destructive hover:text-destructive hover:bg-destructive/10"
-                onClick={() => setShowDeleteDialog(true)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowDeleteDialog(true);
+                }}
                 disabled={isDeleting}
               >
                 {isDeleting ? (

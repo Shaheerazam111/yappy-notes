@@ -94,7 +94,7 @@ export default function Home() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-screen">
+      <div className="flex items-center justify-center h-[100dvh]">
         <div className="text-muted-foreground">Loading...</div>
       </div>
     );
@@ -114,7 +114,7 @@ export default function Home() {
           onUsernameSet={handleUsernameSet}
         />
         {!showUsernameModal && (
-          <div className="flex items-center justify-center h-screen">
+          <div className="flex items-center justify-center h-[100dvh]">
             <div className="text-muted-foreground">Loading...</div>
           </div>
         )}
@@ -125,7 +125,7 @@ export default function Home() {
   // If no user ID and passcode not verified, show nothing (shouldn't happen)
   if (!currentUserId) {
     return (
-      <div className="flex items-center justify-center h-screen">
+      <div className="flex items-center justify-center h-[100dvh]">
         <div className="text-muted-foreground">Loading...</div>
       </div>
     );

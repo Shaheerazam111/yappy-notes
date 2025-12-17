@@ -362,6 +362,26 @@ export function ChatWindow({
     }
   };
 
+  const handleToggleChatMode = async () => {
+    if (!chatMode) {
+      // Switching from Notes to Chat mode
+      setChatMode(true);
+      
+      // Mark all other user's messages as seen
+      await fetch("/api/messages/seen", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: currentUserId }),
+      });
+      
+      await fetchMessages(); // Refresh to show all messages
+    } else {
+      // Switching from Chat to Notes mode
+      setChatMode(false);
+      await fetchMessages(); // Refresh to show only notes
+    }
+  };
+
   const handleEmojiClick = (emojiData: EmojiClickData) => {
     setText((prev) => prev + emojiData.emoji);
     setShowEmojiPicker(false);
@@ -387,7 +407,7 @@ export function ChatWindow({
   }, [showEmojiPicker]);
 
   return (
-    <div className="flex flex-col h-screen bg-background">
+    <div className="flex flex-col h-[100dvh] bg-background">
       {/* Header */}
       <div className="border-b border-border p-4 flex items-center justify-between">
         <h1 className="text-xl font-semibold">Notes</h1>
@@ -443,20 +463,22 @@ export function ChatWindow({
                 <p>Clear chat</p>
               </TooltipContent>
             </Tooltip>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setShowResetDialog(true)}
-                >
-                  <X className="h-4 w-4" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>Reset app</p>
-              </TooltipContent>
-            </Tooltip>
+            {currentUserName === "Shaheer" && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowResetDialog(true)}
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Reset app</p>
+                </TooltipContent>
+              </Tooltip>
+            )}
           </div>
         )}
       </div>
@@ -483,7 +505,7 @@ export function ChatWindow({
                 No notes available
               </div>
             ) : (
-              displayMessages.map((message) => (
+              displayMessages.map((message, index) => (
                 <MessageBubble
                   key={message._id}
                   message={message}
@@ -493,6 +515,8 @@ export function ChatWindow({
                   isNoteMode={!chatMode}
                   showSeenDelivered={chatMode}
                   isDeleting={deletingMessage === message._id}
+                  isLastMessage={index === displayMessages.length - 1}
+                  onTripleClick={handleToggleChatMode}
                 />
               ))
             )}
