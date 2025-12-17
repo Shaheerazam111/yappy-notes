@@ -52,7 +52,7 @@ export function MessageBubble({
   const bubbleColor = isNoteMode
     ? "bg-muted text-muted-foreground"
     : isCurrentUser
-    ? "bg-primary text-primary-foreground"
+    ? "bg-muted text-muted-foreground"
     : "bg-muted text-muted-foreground";
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
 

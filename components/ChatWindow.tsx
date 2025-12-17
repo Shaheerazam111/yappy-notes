@@ -5,7 +5,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { MessageBubble } from "./MessageBubble";
 import { compressImageToBase64 } from "@/lib/compressImage";
-import { RefreshCw, Image as ImageIcon, Trash2, X, Smile, Loader2 } from "lucide-react";
+import {
+  RefreshCw,
+  Image as ImageIcon,
+  Trash2,
+  X,
+  Smile,
+  Loader2,
+} from "lucide-react";
 import EmojiPicker, { EmojiClickData, Theme } from "emoji-picker-react";
 import { UpdatePasscodeDialog } from "./UpdatePasscodeDialog";
 import { toast } from "sonner";
@@ -171,7 +178,7 @@ export function ChatWindow({
     if (!text.trim() && !loading) return;
 
     const messageText = text.trim();
-    
+
     // Intercept passcode in message input
     if (!chatMode) {
       try {
@@ -186,14 +193,14 @@ export function ChatWindow({
           // Correct passcode - unlock chat mode and mark messages as seen
           setChatMode(true);
           setText("");
-          
+
           // Mark all other user's messages as seen
           await fetch("/api/messages/seen", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ userId: currentUserId }),
           });
-          
+
           await fetchMessages(); // Refresh to show all messages
           return;
         }
@@ -495,8 +502,8 @@ export function ChatWindow({
       </div>
 
       {/* Input */}
-      <div className="border-t border-border p-4">
-        <div className="relative">
+      <div className="border-t border-border p-4 relative overflow-visible">
+        <div className="relative overflow-visible">
           <div className="flex gap-2">
             <input
               ref={fileInputRef}
@@ -522,24 +529,22 @@ export function ChatWindow({
                 <p>Upload image</p>
               </TooltipContent>
             </Tooltip>
-            {chatMode && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="icon"
-                    disabled={loading}
-                    onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-                  >
-                    <Smile className="h-4 w-4" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>
-                  <p>Add emoji</p>
-                </TooltipContent>
-              </Tooltip>
-            )}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  disabled={loading}
+                  onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                >
+                  <Smile className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Add emoji</p>
+              </TooltipContent>
+            </Tooltip>
             <Input
               type="text"
               placeholder={chatMode ? "Type a message..." : "Add a note..."}
@@ -564,7 +569,10 @@ export function ChatWindow({
           {showEmojiPicker && (
             <div
               ref={emojiPickerRef}
-              className="absolute bottom-full mb-2 left-0 z-50"
+              className="absolute bottom-full mb-2 left-0 z-50 shadow-lg rounded-lg overflow-hidden"
+              style={{
+                maxWidth: "min(350px, calc(100vw - 2rem))",
+              }}
             >
               <EmojiPicker
                 onEmojiClick={handleEmojiClick}
