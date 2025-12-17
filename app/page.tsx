@@ -18,9 +18,9 @@ export default function Home() {
   useEffect(() => {
     const checkExistingUser = async () => {
       try {
-        // First, check if user exists in sessionStorage (for returning visitors)
-        const storedUserId = sessionStorage.getItem('chatUserId');
-        const storedUserName = sessionStorage.getItem('chatUserName');
+        // First, check if user exists in localStorage (for returning visitors)
+        const storedUserId = localStorage.getItem('chatUserId');
+        const storedUserName = localStorage.getItem('chatUserName');
 
         if (storedUserId && storedUserName) {
           // Verify user exists in DB
@@ -82,9 +82,9 @@ export default function Home() {
     setCurrentUserId(userId);
     setCurrentUserName(userName);
     setShowUsernameModal(false);
-    // Store in sessionStorage for this session only
-    sessionStorage.setItem('chatUserId', userId);
-    sessionStorage.setItem('chatUserName', userName);
+    // Store in localStorage for persistent storage across sessions
+    localStorage.setItem('chatUserId', userId);
+    localStorage.setItem('chatUserName', userName);
     // Refresh users list
     fetch('/api/users')
       .then((res) => res.json())

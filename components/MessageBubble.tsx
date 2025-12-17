@@ -205,7 +205,9 @@ export function MessageBubble({
         } ${!isNoteMode && !isCurrentUser ? "max-w-[80%] md:max-w-[60%]" : ""}`}
       >
         {!isNoteMode && (
-          <span className="text-xs text-muted-foreground">{senderName}</span>
+          <span className="text-xs text-muted-foreground">
+            {senderName.charAt(0).toUpperCase()}
+          </span>
         )}
         {!isNoteMode && (
           <span className="text-xs text-muted-foreground">•</span>

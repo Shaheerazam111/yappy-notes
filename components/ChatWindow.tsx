@@ -12,6 +12,7 @@ import {
   X,
   Smile,
   Loader2,
+  LogOut,
 } from "lucide-react";
 import EmojiPicker, { EmojiClickData, Theme } from "emoji-picker-react";
 import { UpdatePasscodeDialog } from "./UpdatePasscodeDialog";
@@ -226,6 +227,10 @@ export function ChatWindow({
 
       if (response.ok) {
         await fetchMessages();
+        // Scroll to bottom after refresh to show new message
+        setTimeout(() => {
+          messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+        }, 100);
       } else {
         toast.error("Failed to send message");
       }
@@ -262,6 +267,10 @@ export function ChatWindow({
 
       if (response.ok) {
         await fetchMessages();
+        // Scroll to bottom after refresh to show new image
+        setTimeout(() => {
+          messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+        }, 100);
         toast.success("Image uploaded successfully");
       } else {
         toast.error("Failed to upload image");
@@ -366,14 +375,14 @@ export function ChatWindow({
     if (!chatMode) {
       // Switching from Notes to Chat mode
       setChatMode(true);
-      
+
       // Mark all other user's messages as seen
       await fetch("/api/messages/seen", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userId: currentUserId }),
       });
-      
+
       await fetchMessages(); // Refresh to show all messages
     } else {
       // Switching from Chat to Notes mode
@@ -385,6 +394,12 @@ export function ChatWindow({
   const handleEmojiClick = (emojiData: EmojiClickData) => {
     setText((prev) => prev + emojiData.emoji);
     setShowEmojiPicker(false);
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem("chatUserId");
+    localStorage.removeItem("chatUserName");
+    window.location.reload();
   };
 
   // Close emoji picker when clicking outside
@@ -407,84 +422,99 @@ export function ChatWindow({
   }, [showEmojiPicker]);
 
   return (
-    <div className="flex flex-col h-[100dvh] bg-background">
+    <div className="flex flex-col h-[100dvh] bg-background overflow-hidden">
       {/* Header */}
-      <div className="border-b border-border p-4 flex items-center justify-between">
+      <div className="border-b border-border p-4 flex items-center justify-between flex-shrink-0 sticky top-0 z-10 bg-background">
         <h1 className="text-xl font-semibold">Notes</h1>
-        {chatMode && (
-          <div className="flex gap-2">
-            {currentUserName === "Shaheer" && (
+        <div className="flex gap-2 items-center">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button variant="outline" size="sm" onClick={handleLogout}>
+                <LogOut className="h-4 w-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>Logout</p>
+            </TooltipContent>
+          </Tooltip>
+          {chatMode && (
+            <>
+              {currentUserName === "Shaheer" && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setShowPasscodeDialog(true)}
+                    >
+                      🔑
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>Update passcode</p>
+                  </TooltipContent>
+                </Tooltip>
+              )}
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => setShowPasscodeDialog(true)}
+                    onClick={async () => {
+                      await fetchMessages();
+                      toast.success("Messages refreshed");
+                    }}
+                    disabled={refreshing}
                   >
-                    🔑
+                    <RefreshCw
+                      className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`}
+                    />
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>
-                  <p>Update passcode</p>
+                  <p>Refresh messages</p>
                 </TooltipContent>
               </Tooltip>
-            )}
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={async () => {
-                    await fetchMessages();
-                    toast.success("Messages refreshed");
-                  }}
-                  disabled={refreshing}
-                >
-                  <RefreshCw
-                    className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`}
-                  />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>Refresh messages</p>
-              </TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setShowClearDialog(true)}
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>Clear chat</p>
-              </TooltipContent>
-            </Tooltip>
-            {currentUserName === "Shaheer" && (
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => setShowResetDialog(true)}
+                    onClick={() => setShowClearDialog(true)}
                   >
-                    <X className="h-4 w-4" />
+                    <Trash2 className="h-4 w-4" />
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>
-                  <p>Reset app</p>
+                  <p>Clear chat</p>
                 </TooltipContent>
               </Tooltip>
-            )}
-          </div>
-        )}
+              {currentUserName === "Shaheer" && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setShowResetDialog(true)}
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>Reset app</p>
+                  </TooltipContent>
+                </Tooltip>
+              )}
+            </>
+          )}
+        </div>
       </div>
 
       {/* Messages */}
-      <div ref={messagesContainerRef} className="flex-1 overflow-y-auto p-4">
+      <div
+        ref={messagesContainerRef}
+        className="flex-1 overflow-y-auto p-4 min-h-0"
+      >
         {initialLoading ? (
           <div className="flex items-center justify-center h-full">
             <div className="flex flex-col items-center gap-2">
@@ -526,7 +556,7 @@ export function ChatWindow({
       </div>
 
       {/* Input */}
-      <div className="border-t border-border p-4 relative overflow-visible">
+      <div className="border-t border-border p-4 relative overflow-visible flex-shrink-0 sticky bottom-0 z-10 bg-background">
         <div className="relative overflow-visible">
           <div className="flex gap-2">
             <input
@@ -613,7 +643,7 @@ export function ChatWindow({
       <Dialog open={showClearDialog} onOpenChange={setShowClearDialog}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Clear Chat</DialogTitle>
+            <DialogTitle>Clear Notes</DialogTitle>
             <DialogDescription>
               Are you sure you want to delete all messages? Images will remain
               stored in the database.
@@ -638,7 +668,7 @@ export function ChatWindow({
                   Clearing...
                 </>
               ) : (
-                "Clear Chat"
+                "Clear Notes"
               )}
             </Button>
           </DialogFooter>
