@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Trash2, Download, Loader2 } from "lucide-react";
+import { Trash2, Download, Loader2, XCircle, CheckCircle } from "lucide-react";
 import {
   Tooltip,
   TooltipContent,
@@ -188,7 +188,8 @@ export function MessageBubble({
           <>
             <span className="text-xs text-muted-foreground">•</span>
             <span className="text-xs text-muted-foreground">
-              {message.seenAt ? "✓✓" : ""}
+              {/* show proper seen and delivered icons */}
+              {message.seenAt ? <CheckCircle className="h-3 w-3" /> : <XCircle className="h-3 w-3" />}
             </span>
           </>
         )}
