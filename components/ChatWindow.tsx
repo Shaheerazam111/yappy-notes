@@ -489,7 +489,7 @@ export function ChatWindow({
                   message={message}
                   currentUserId={currentUserId}
                   senderName={getUserName(message.senderUserId)}
-                  onDelete={chatMode ? handleDeleteMessage : undefined}
+                  onDelete={handleDeleteMessage}
                   isNoteMode={!chatMode}
                   showSeenDelivered={chatMode}
                   isDeleting={deletingMessage === message._id}
