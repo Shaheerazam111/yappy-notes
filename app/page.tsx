@@ -11,51 +11,70 @@ export default function Home() {
   const [currentUserName, setCurrentUserName] = useState<string>('');
   const [allUsers, setAllUsers] = useState<Array<{ _id: string; name: string }>>([]);
   const [showUsernameModal, setShowUsernameModal] = useState(false);
+  const [showPasscodeModal, setShowPasscodeModal] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  // Always require passcode on page load
+  // Check for existing user on mount
   useEffect(() => {
-    setPasscodeVerified(false);
-    setCurrentUserId(null);
-    setLoading(false);
-  }, []);
-
-  const handlePasscodeCorrect = () => {
-    setPasscodeVerified(true);
-    checkUserExists();
-  };
-
-  const checkUserExists = async () => {
-    try {
-      const response = await fetch('/api/users');
-      if (response.ok) {
-        const users = await response.json();
-        setAllUsers(users);
-
-        // Check if there's a user stored in sessionStorage (temporary, per session)
+    const checkExistingUser = async () => {
+      try {
+        // First, check if user exists in sessionStorage (for returning visitors)
         const storedUserId = sessionStorage.getItem('chatUserId');
         const storedUserName = sessionStorage.getItem('chatUserName');
 
         if (storedUserId && storedUserName) {
-          // Verify user still exists in DB
-          const userExists = users.some((u: { _id: string }) => u._id === storedUserId);
-          if (userExists) {
-            setCurrentUserId(storedUserId);
-            setCurrentUserName(storedUserName);
-            return;
+          // Verify user exists in DB
+          const response = await fetch('/api/users');
+          if (response.ok) {
+            const users = await response.json();
+            setAllUsers(users);
+            const userExists = users.some((u: { _id: string }) => u._id === storedUserId);
+            
+            if (userExists) {
+              // Returning user - skip passcode modal, go directly to notes
+              setCurrentUserId(storedUserId);
+              setCurrentUserName(storedUserName);
+              setPasscodeVerified(true);
+              setLoading(false);
+              return;
+            }
           }
         }
 
-        // If no stored user or user doesn't exist, show username modal
-        if (users.length === 0) {
-          setShowUsernameModal(true);
+        // No session user, check if this is first time (no users in DB)
+        const response = await fetch('/api/users');
+        if (response.ok) {
+          const users = await response.json();
+          setAllUsers(users);
+          
+          if (users.length === 0) {
+            // First time ever - show passcode modal first
+            setShowPasscodeModal(true);
+            setLoading(false);
+          } else {
+            // Users exist but no session - show username modal (will find existing or create)
+            setShowUsernameModal(true);
+            setPasscodeVerified(true); // Skip passcode for returning to app
+            setLoading(false);
+          }
         } else {
-          // If users exist but no stored user, show username modal to create/select
-          setShowUsernameModal(true);
+          setLoading(false);
         }
+      } catch (error) {
+        console.error('Error checking users:', error);
+        setLoading(false);
       }
-    } catch (error) {
-      console.error('Error checking users:', error);
+    };
+
+    checkExistingUser();
+  }, []);
+
+  const handlePasscodeCorrect = () => {
+    setPasscodeVerified(true);
+    setShowPasscodeModal(false);
+    // After passcode, show username modal if needed
+    if (!currentUserId) {
+      setShowUsernameModal(true);
     }
   };
 
@@ -67,7 +86,10 @@ export default function Home() {
     sessionStorage.setItem('chatUserId', userId);
     sessionStorage.setItem('chatUserName', userName);
     // Refresh users list
-    checkUserExists();
+    fetch('/api/users')
+      .then((res) => res.json())
+      .then((users) => setAllUsers(users))
+      .catch((err) => console.error('Error fetching users:', err));
   };
 
   if (loading) {
@@ -78,11 +100,13 @@ export default function Home() {
     );
   }
 
-  if (!passcodeVerified) {
+  // Show passcode modal only on first login (when no users exist)
+  if (showPasscodeModal) {
     return <PasscodeModal open={true} onPasscodeCorrect={handlePasscodeCorrect} />;
   }
 
-  if (showUsernameModal || !currentUserId) {
+  // Show username modal if needed
+  if (showUsernameModal || (!currentUserId && passcodeVerified)) {
     return (
       <>
         <UsernameModal
@@ -95,6 +119,15 @@ export default function Home() {
           </div>
         )}
       </>
+    );
+  }
+
+  // If no user ID and passcode not verified, show nothing (shouldn't happen)
+  if (!currentUserId) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <div className="text-muted-foreground">Loading...</div>
+      </div>
     );
   }
 
