@@ -31,12 +31,18 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 
+interface Reaction {
+  userId: string;
+  emoji: string;
+}
+
 interface Message {
   _id: string;
   senderUserId: string;
   text?: string | null;
   imageBase64?: string | null;
   createdAt: string | Date;
+  reactions?: Reaction[];
 }
 
 interface ChatWindowProps {
@@ -350,6 +356,29 @@ export function ChatWindow({
     }
   };
 
+  const handleReaction = async (messageId: string, emoji: string) => {
+    try {
+      const response = await fetch(`/api/messages/${messageId}/reactions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId: currentUserId,
+          emoji,
+        }),
+      });
+
+      if (response.ok) {
+        // Refresh messages to show updated reactions
+        await fetchMessages();
+      } else {
+        toast.error("Failed to add reaction");
+      }
+    } catch (error) {
+      console.error("Error adding reaction:", error);
+      toast.error("Failed to add reaction");
+    }
+  };
+
   const handleDeleteMessage = async (messageId: string) => {
     setDeletingMessage(messageId);
     try {
@@ -547,6 +576,7 @@ export function ChatWindow({
                   isDeleting={deletingMessage === message._id}
                   isLastMessage={index === displayMessages.length - 1}
                   onTripleClick={handleToggleChatMode}
+                  onReaction={handleReaction}
                 />
               ))
             )}

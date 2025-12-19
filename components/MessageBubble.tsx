@@ -1,8 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { Trash2, Download, Loader2, XCircle, CheckCircle } from "lucide-react";
+import {
+  Trash2,
+  Download,
+  Loader2,
+  XCircle,
+  CheckCircle,
+  Eye,
+} from "lucide-react";
 import {
   Tooltip,
   TooltipContent,
@@ -17,6 +24,11 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 
+interface Reaction {
+  userId: string;
+  emoji: string;
+}
+
 interface MessageBubbleProps {
   message: {
     _id: string;
@@ -25,6 +37,7 @@ interface MessageBubbleProps {
     imageBase64?: string | null;
     createdAt: string | Date;
     seenAt?: string | Date;
+    reactions?: Reaction[];
   };
   currentUserId: string;
   senderName: string;
@@ -34,6 +47,7 @@ interface MessageBubbleProps {
   isDeleting?: boolean; // Show loading state while deleting
   isLastMessage?: boolean; // If this is the last message in the list
   onTripleClick?: () => void; // Handler for triple-click to toggle chat mode
+  onReaction?: (messageId: string, emoji: string) => Promise<void>; // Handler for reaction
 }
 
 export function MessageBubble({
@@ -46,6 +60,7 @@ export function MessageBubble({
   isDeleting = false,
   isLastMessage = false,
   onTripleClick,
+  onReaction,
 }: MessageBubbleProps) {
   const isCurrentUser = message.senderUserId === currentUserId;
   const alignment = isNoteMode
@@ -59,7 +74,36 @@ export function MessageBubble({
     ? "bg-muted text-muted-foreground"
     : "bg-muted text-muted-foreground";
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [showImageModal, setShowImageModal] = useState(false);
+  const [showReactionDialog, setShowReactionDialog] = useState(false);
   const [clickTimes, setClickTimes] = useState<number[]>([]);
+  const [isLongPressing, setIsLongPressing] = useState(false);
+  const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const messageRef = useRef<HTMLDivElement>(null);
+
+  // Common emoji reactions
+  const reactionEmojis = ["❤️", "😂", "😮", "😢", "🙏", "👍", "👎", "🔥"];
+
+  // Group reactions by emoji and count
+  const groupedReactions: Record<
+    string,
+    { emoji: string; count: number; userReacted: boolean }
+  > =
+    message.reactions?.reduce((acc, reaction) => {
+      if (!acc[reaction.emoji]) {
+        acc[reaction.emoji] = {
+          emoji: reaction.emoji,
+          count: 0,
+          userReacted: false,
+        };
+      }
+      acc[reaction.emoji].count++;
+      if (reaction.userId === currentUserId) {
+        acc[reaction.emoji].userReacted = true;
+      }
+      return acc;
+    }, {} as Record<string, { emoji: string; count: number; userReacted: boolean }>) ||
+    {};
 
   const formatTime = (date: string | Date) => {
     const d = typeof date === "string" ? new Date(date) : date;
@@ -91,7 +135,13 @@ export function MessageBubble({
     }
   };
 
-  const handleClick = () => {
+  const handleClick = (e: React.MouseEvent) => {
+    // Don't handle click if long press was just triggered
+    if (isLongPressing) {
+      e.stopPropagation();
+      return;
+    }
+
     if (!isLastMessage || !onTripleClick) return;
 
     const now = Date.now();
@@ -108,8 +158,73 @@ export function MessageBubble({
     }
   };
 
+  // Long press detection for reactions
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (e.button !== 0) return; // Only handle left mouse button
+    // Don't trigger long press on buttons or interactive elements
+    if ((e.target as HTMLElement).closest("button")) return;
+
+    longPressTimerRef.current = setTimeout(() => {
+      setIsLongPressing(true);
+      setShowReactionDialog(true);
+    }, 500); // 500ms for long press
+  };
+
+  const handleMouseUp = () => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+    // Small delay to prevent click from firing after long press
+    setTimeout(() => setIsLongPressing(false), 100);
+  };
+
+  const handleMouseLeave = () => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+    setIsLongPressing(false);
+  };
+
+  // Touch events for mobile
+  const handleTouchStart = (e: React.TouchEvent) => {
+    // Don't trigger long press on buttons or interactive elements
+    if ((e.target as HTMLElement).closest("button")) return;
+
+    longPressTimerRef.current = setTimeout(() => {
+      setIsLongPressing(true);
+      setShowReactionDialog(true);
+    }, 500);
+  };
+
+  const handleTouchEnd = () => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+    // Small delay to prevent click from firing after long press
+    setTimeout(() => setIsLongPressing(false), 100);
+  };
+
+  const handleReactionClick = async (emoji: string) => {
+    if (onReaction) {
+      await onReaction(message._id, emoji);
+      setShowReactionDialog(false);
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      if (longPressTimerRef.current) {
+        clearTimeout(longPressTimerRef.current);
+      }
+    };
+  }, []);
+
   return (
     <div
+      ref={messageRef}
       className={`flex flex-col mb-4 group w-full ${
         isNoteMode
           ? "items-center"
@@ -118,6 +233,11 @@ export function MessageBubble({
           : "items-start"
       }`}
       onClick={handleClick}
+      onMouseDown={handleMouseDown}
+      onMouseUp={handleMouseUp}
+      onMouseLeave={handleMouseLeave}
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
     >
       <div
         className={`flex items-start ${
@@ -136,37 +256,47 @@ export function MessageBubble({
           } rounded-lg px-4 py-2 ${bubbleColor} relative`}
         >
           {message.imageBase64 && (
-            <div className="mb-2 rounded overflow-hidden relative group/image">
-              <img
-                src={message.imageBase64}
-                alt="Shared image"
-                className="max-w-full h-auto rounded"
-                style={{ maxHeight: "400px" }}
-              />
-              <div className="absolute top-2 right-2">
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="secondary"
-                      size="icon"
-                      className="h-8 w-8 bg-background/90 hover:bg-background shadow-md"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDownloadImage();
-                      }}
-                    >
-                      <Download className="h-4 w-4" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>Download image</p>
-                  </TooltipContent>
-                </Tooltip>
-              </div>
+            <div className="mb-2 rounded overflow-hidden relative group/image flex items-center justify-center min-h-[100px] bg-muted/50">
+              <Button
+                variant="ghost"
+                size="lg"
+                className="flex flex-col items-center justify-center gap-2 h-auto p-4"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowImageModal(true);
+                }}
+              >
+                <Eye className="h-8 w-8 text-muted-foreground" />
+                <span className="text-xs text-muted-foreground">
+                  View Image
+                </span>
+              </Button>
             </div>
           )}
           {message.text && (
-            <p className="wrap-break-word whitespace-pre-wrap">{message.text}</p>
+            <p className="wrap-break-word whitespace-pre-wrap">
+              {message.text}
+            </p>
+          )}
+          {/* Display reactions */}
+          {message.reactions && message.reactions.length > 0 && (
+            <div className="flex flex-wrap gap-1 mt-2">
+              {Object.values(groupedReactions).map((reaction, index) => (
+                <Button
+                  key={index}
+                  variant={reaction.userReacted ? "default" : "outline"}
+                  size="sm"
+                  className="h-6 px-2 text-xs"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleReactionClick(reaction.emoji);
+                  }}
+                >
+                  <span>{reaction.emoji}</span>
+                  <span className="ml-1">{reaction.count}</span>
+                </Button>
+              ))}
+            </div>
           )}
         </div>
         {isCurrentUser && onDelete && (
@@ -220,7 +350,11 @@ export function MessageBubble({
             <span className="text-xs text-muted-foreground">•</span>
             <span className="text-xs text-muted-foreground">
               {/* show proper seen and delivered icons */}
-              {message.seenAt ? <CheckCircle className="h-3 w-3" /> : <XCircle className="h-3 w-3" />}
+              {message.seenAt ? (
+                <CheckCircle className="h-3 w-3" />
+              ) : (
+                <XCircle className="h-3 w-3" />
+              )}
             </span>
           </>
         )}
@@ -247,6 +381,70 @@ export function MessageBubble({
               Delete
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Image Modal */}
+      <Dialog open={showImageModal} onOpenChange={setShowImageModal}>
+        <DialogContent className="max-w-4xl max-h-[90vh] p-0">
+          <DialogHeader className="sr-only">
+            <DialogTitle>View Image</DialogTitle>
+          </DialogHeader>
+          <div className="relative">
+            {message.imageBase64 && (
+              <img
+                src={message.imageBase64}
+                alt="Shared image"
+                className="w-full h-auto max-h-[85vh] object-contain"
+              />
+            )}
+            <div className="absolute top-4 left-4">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="secondary"
+                    size="icon"
+                    className="h-10 w-10 bg-background/90 hover:bg-background shadow-md"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDownloadImage();
+                    }}
+                  >
+                    <Download className="h-5 w-5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Download image</p>
+                </TooltipContent>
+              </Tooltip>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Reaction Picker Dialog */}
+      <Dialog open={showReactionDialog} onOpenChange={setShowReactionDialog}>
+        <DialogContent className="max-w-xs">
+          <DialogHeader>
+            <DialogTitle>Add Reaction</DialogTitle>
+          </DialogHeader>
+          <div className="grid grid-cols-4 gap-2 py-4">
+            {reactionEmojis.map((emoji) => {
+              const reaction = groupedReactions[emoji];
+              const userReacted = reaction?.userReacted || false;
+              return (
+                <Button
+                  key={emoji}
+                  variant={userReacted ? "default" : "outline"}
+                  size="lg"
+                  className="text-2xl h-12"
+                  onClick={() => handleReactionClick(emoji)}
+                >
+                  {emoji}
+                </Button>
+              );
+            })}
+          </div>
         </DialogContent>
       </Dialog>
     </div>
