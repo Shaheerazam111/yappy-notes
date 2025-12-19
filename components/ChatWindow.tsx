@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { MessageBubble } from "./MessageBubble";
 import { compressImageToBase64 } from "@/lib/compressImage";
 import {
@@ -13,6 +12,7 @@ import {
   Smile,
   Loader2,
   LogOut,
+  RotateCw,
 } from "lucide-react";
 import EmojiPicker, { EmojiClickData, Theme } from "emoji-picker-react";
 import { UpdatePasscodeDialog } from "./UpdatePasscodeDialog";
@@ -72,10 +72,12 @@ export function ChatWindow({
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [showPasscodeDialog, setShowPasscodeDialog] = useState(false);
   const [chatMode, setChatMode] = useState(false); // Hidden chat mode, unlocked by passcode
+  const [syncEnabled, setSyncEnabled] = useState(false); // Auto-sync toggle
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const emojiPickerRef = useRef<HTMLDivElement>(null);
+  const syncIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   const getUserName = (userId: string) => {
     const user = allUsers.find((u) => u._id === userId);
@@ -450,12 +452,61 @@ export function ChatWindow({
     }
   }, [showEmojiPicker]);
 
+  // Auto-sync interval
+  useEffect(() => {
+    if (syncEnabled) {
+      // Set up interval to fetch messages every 5 seconds
+      syncIntervalRef.current = setInterval(() => {
+        fetchMessages();
+      }, 5000); // 5 seconds
+
+      return () => {
+        if (syncIntervalRef.current) {
+          clearInterval(syncIntervalRef.current);
+          syncIntervalRef.current = null;
+        }
+      };
+    } else {
+      // Clear interval when sync is disabled
+      if (syncIntervalRef.current) {
+        clearInterval(syncIntervalRef.current);
+        syncIntervalRef.current = null;
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [syncEnabled]);
+
+  const handleToggleSync = () => {
+    setSyncEnabled(!syncEnabled);
+    if (!syncEnabled) {
+      toast.success("Auto-sync enabled");
+    } else {
+      toast.info("Auto-sync disabled");
+    }
+  };
+
   return (
     <div className="flex flex-col h-[100dvh] bg-background overflow-hidden">
       {/* Header */}
       <div className="border-b border-border p-4 flex items-center justify-between flex-shrink-0 sticky top-0 z-10 bg-background">
         <h1 className="text-xl font-semibold">Notes</h1>
         <div className="flex gap-2 items-center">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant={syncEnabled ? "default" : "outline"}
+                size="sm"
+                onClick={handleToggleSync}
+              >
+                <RotateCw
+                  className={`h-4 w-4 ${syncEnabled ? "animate-spin" : ""}`}
+                />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>{syncEnabled ? "Disable auto-sync" : "Enable auto-sync"}</p>
+            </TooltipContent>
+          </Tooltip>
           <Tooltip>
             <TooltipTrigger asChild>
               <Button variant="outline" size="sm" onClick={handleLogout}>
@@ -588,7 +639,7 @@ export function ChatWindow({
       {/* Input */}
       <div className="border-t border-border p-4 relative overflow-visible flex-shrink-0 sticky bottom-0 z-10 bg-background">
         <div className="relative overflow-visible">
-          <div className="flex gap-2">
+          <div className="flex gap-2 items-end">
             <input
               ref={fileInputRef}
               type="file"
@@ -605,6 +656,7 @@ export function ChatWindow({
                   size="icon"
                   disabled={loading}
                   onClick={() => fileInputRef.current?.click()}
+                  className="flex-shrink-0"
                 >
                   <ImageIcon className="h-4 w-4" />
                 </Button>
@@ -621,6 +673,7 @@ export function ChatWindow({
                   size="icon"
                   disabled={loading}
                   onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                  className="flex-shrink-0"
                 >
                   <Smile className="h-4 w-4" />
                 </Button>
@@ -629,23 +682,27 @@ export function ChatWindow({
                 <p>Add emoji</p>
               </TooltipContent>
             </Tooltip>
-            <Input
-              type="text"
+            <textarea
               placeholder={chatMode ? "Type a message..." : "Add a note..."}
               value={text}
               onChange={(e) => setText(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  handleSendMessage();
-                }
-              }}
               disabled={loading}
-              className="flex-1"
+              rows={1}
+              className="flex-1 min-h-10 max-h-32 resize-none rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+              style={{
+                height: "auto",
+                overflowY: "auto",
+              }}
+              onInput={(e) => {
+                const target = e.target as HTMLTextAreaElement;
+                target.style.height = "auto";
+                target.style.height = `${Math.min(target.scrollHeight, 128)}px`;
+              }}
             />
             <Button
               onClick={handleSendMessage}
               disabled={loading || !text.trim()}
+              className="flex-shrink-0"
             >
               {chatMode ? "Send" : "Add"}
             </Button>
