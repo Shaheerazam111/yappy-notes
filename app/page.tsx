@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { usePathname } from 'next/navigation';
 import { PasscodeModal } from '@/components/PasscodeModal';
 import { UsernameModal } from '@/components/UsernameModal';
 import { ChatWindow } from '@/components/ChatWindow';
@@ -13,69 +14,99 @@ export default function Home() {
   const [showUsernameModal, setShowUsernameModal] = useState(false);
   const [showPasscodeModal, setShowPasscodeModal] = useState(false);
   const [loading, setLoading] = useState(true);
+  const pathname = usePathname();
+  const wasVisibleRef = useRef(true);
 
-  // Check for existing user on mount
+  // Always require passcode on app load/reopen
   useEffect(() => {
-    const checkExistingUser = async () => {
+    const initializeApp = async () => {
       try {
-        // First, check if user exists in localStorage (for returning visitors)
-        const storedUserId = localStorage.getItem('chatUserId');
-        const storedUserName = localStorage.getItem('chatUserName');
-
-        if (storedUserId && storedUserName) {
-          // Verify user exists in DB
-          const response = await fetch('/api/users');
-          if (response.ok) {
-            const users = await response.json();
-            setAllUsers(users);
-            const userExists = users.some((u: { _id: string }) => u._id === storedUserId);
-            
-            if (userExists) {
-              // Returning user - skip passcode modal, go directly to notes
-              setCurrentUserId(storedUserId);
-              setCurrentUserName(storedUserName);
-              setPasscodeVerified(true);
-              setLoading(false);
-              return;
-            }
-          }
-        }
-
-        // No session user, check if this is first time (no users in DB)
+        // Always show passcode modal first on app load
+        setShowPasscodeModal(true);
+        
+        // Load users list in background
         const response = await fetch('/api/users');
         if (response.ok) {
           const users = await response.json();
           setAllUsers(users);
-          
-          if (users.length === 0) {
-            // First time ever - show passcode modal first
-            setShowPasscodeModal(true);
-            setLoading(false);
-          } else {
-            // Users exist but no session - show username modal (will find existing or create)
-            setShowUsernameModal(true);
-            setPasscodeVerified(true); // Skip passcode for returning to app
-            setLoading(false);
-          }
-        } else {
-          setLoading(false);
         }
+        
+        setLoading(false);
       } catch (error) {
-        console.error('Error checking users:', error);
+        console.error('Error initializing app:', error);
         setLoading(false);
       }
     };
 
-    checkExistingUser();
+    initializeApp();
   }, []);
 
-  const handlePasscodeCorrect = () => {
+  // Require passcode on page visibility change (tab switch, minimize, etc.)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        // Page became visible - require passcode again if it was previously hidden
+        if (wasVisibleRef.current === false && passcodeVerified) {
+          setPasscodeVerified(false);
+          setShowPasscodeModal(true);
+        }
+        wasVisibleRef.current = true;
+      } else {
+        // Page became hidden
+        wasVisibleRef.current = false;
+      }
+    };
+
+    // Set initial visibility state
+    wasVisibleRef.current = document.visibilityState === 'visible';
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [passcodeVerified]);
+
+  // Require passcode on route/pathname change
+  useEffect(() => {
+    if (pathname && passcodeVerified) {
+      // Pathname changed - require passcode again
+      setPasscodeVerified(false);
+      setShowPasscodeModal(true);
+    }
+  }, [pathname]);
+
+  const handlePasscodeCorrect = async () => {
     setPasscodeVerified(true);
     setShowPasscodeModal(false);
-    // After passcode, show username modal if needed
-    if (!currentUserId) {
-      setShowUsernameModal(true);
+    
+    // After passcode verification, check for stored user
+    const storedUserId = localStorage.getItem('chatUserId');
+    const storedUserName = localStorage.getItem('chatUserName');
+
+    if (storedUserId && storedUserName) {
+      // Verify user exists in DB
+      try {
+        const response = await fetch('/api/users');
+        if (response.ok) {
+          const users = await response.json();
+          setAllUsers(users);
+          const userExists = users.some((u: { _id: string }) => u._id === storedUserId);
+          
+          if (userExists) {
+            // Use stored user
+            setCurrentUserId(storedUserId);
+            setCurrentUserName(storedUserName);
+            return;
+          }
+        }
+      } catch (error) {
+        console.error('Error verifying user:', error);
+      }
     }
+
+    // No valid stored user, show username modal
+    setShowUsernameModal(true);
   };
 
   const handleUsernameSet = (userId: string, userName: string) => {

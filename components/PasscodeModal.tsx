@@ -56,7 +56,7 @@ export function PasscodeModal({ open, onPasscodeCorrect }: PasscodeModalProps) {
         <DialogHeader>
           <DialogTitle>Enter Passcode</DialogTitle>
           <DialogDescription>
-            Please enter the passcode to access the chat.
+            Please enter the passcode to access the notes.
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
