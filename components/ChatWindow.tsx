@@ -498,9 +498,9 @@ export function ChatWindow({
   };
 
   return (
-    <div className="flex flex-col h-[100dvh] bg-background overflow-hidden">
+    <div className="flex flex-col h-dvh bg-background overflow-hidden">
       {/* Header */}
-      <div className="border-b border-border p-4 flex items-center justify-between flex-shrink-0 sticky top-0 z-10 bg-background">
+      <div className="border-b border-border p-4 flex items-center justify-between shrink-0 sticky top-0 z-10 bg-background">
         <h1 className="text-xl font-semibold">Notes</h1>
         <div className="flex gap-2 items-center">
           <Tooltip>
@@ -650,7 +650,7 @@ export function ChatWindow({
       </div>
 
       {/* Input */}
-      <div className="border-t border-border p-4 relative overflow-visible flex-shrink-0 sticky bottom-0 z-10 bg-background">
+      <div className="border-t border-border p-4 overflow-visible shrink-0 sticky bottom-0 z-10 bg-background">
         <div className="relative overflow-visible">
           <div className="flex gap-2 items-end">
             <input
@@ -669,7 +669,7 @@ export function ChatWindow({
                   size="icon"
                   disabled={loading}
                   onClick={() => fileInputRef.current?.click()}
-                  className="flex-shrink-0"
+                  className="shrink-0"
                 >
                   <ImageIcon className="h-4 w-4" />
                 </Button>
@@ -686,7 +686,7 @@ export function ChatWindow({
                   size="icon"
                   disabled={loading}
                   onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-                  className="flex-shrink-0"
+                  className="shrink-0"
                 >
                   <Smile className="h-4 w-4" />
                 </Button>
@@ -715,7 +715,7 @@ export function ChatWindow({
             <Button
               onClick={handleSendMessage}
               disabled={loading || !text.trim()}
-              className="flex-shrink-0"
+              className="shrink-0"
             >
               {chatMode ? "Send" : "Add"}
             </Button>
