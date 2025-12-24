@@ -13,10 +13,10 @@ export async function GET(request: NextRequest) {
     const db = await getDb();
     let query: any = {};
 
-    // For Dudu: Filter out deleted messages
-    // For Bubu: Show all messages (including deleted ones)
-    if (userId && userName === "Dudu") {
-      // Dudu cannot see deleted messages
+    // For Dudu: Filter out messages deleted for Dudu
+    // For Bubu: Show all messages (including deleted ones) - no filtering
+    if (userId && userName !== "Bubu") {
+      // All users except Bubu cannot see messages deleted for them
       query.$or = [
         { deletedFor: { $exists: false } },
         { deletedFor: { $nin: [userId] } },
@@ -53,10 +53,10 @@ export async function GET(request: NextRequest) {
     const hasMore = messages.length > limit;
     const resultMessages = hasMore ? messages.slice(0, limit) : messages;
 
-    // For Bubu: Mark deleted messages with isDeleted flag
+    // For Bubu: Mark deleted messages with isDeleted flag (any message that has been deleted by anyone)
     if (userName === "Bubu" && userId) {
       resultMessages.forEach((msg: any) => {
-        msg.isDeleted = msg.deletedFor && msg.deletedFor.includes(userId);
+        msg.isDeleted = msg.deletedFor && msg.deletedFor.length > 0;
       });
     }
 
