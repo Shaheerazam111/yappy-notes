@@ -13,15 +13,38 @@ async function getPasscode(): Promise<string | null> {
   // If not in DB, use ENV and save to DB
   const envPasscode = process.env.CHAT_PASSCODE;
   if (envPasscode) {
-    await db.collection("config").updateOne(
-      { key: "passcode" },
-      { $set: { key: "passcode", value: envPasscode, updatedAt: new Date() } },
-      { upsert: true }
-    );
+    await db
+      .collection("config")
+      .updateOne(
+        { key: "passcode" },
+        {
+          $set: { key: "passcode", value: envPasscode, updatedAt: new Date() },
+        },
+        { upsert: true }
+      );
     return envPasscode;
   }
 
   return null;
+}
+
+// GET - Get passcode (for display purposes)
+export async function GET() {
+  try {
+    const passcode = await getPasscode();
+    if (!passcode) {
+      return NextResponse.json(
+        { error: "Passcode not configured" },
+        { status: 500 }
+      );
+    }
+    return NextResponse.json({ passcode });
+  } catch (error) {
+    return NextResponse.json(
+      { error: "Failed to get passcode" },
+      { status: 500 }
+    );
+  }
 }
 
 // POST - Verify passcode
@@ -50,7 +73,6 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// PUT - Update passcode (only for user "Shaheer")
 export async function PUT(request: NextRequest) {
   try {
     const { passcode, userName } = await request.json();
@@ -62,20 +84,21 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    // Only user "Shaheer" can update passcode
-    if (userName !== "Shaheer") {
+    if (userName !== "Bubu") {
       return NextResponse.json(
-        { error: "Unauthorized: Only Shaheer can update passcode" },
+        { error: "Unauthorized: Only Bubu can update passcode" },
         { status: 403 }
       );
     }
 
     const db = await getDb();
-    await db.collection("config").updateOne(
-      { key: "passcode" },
-      { $set: { key: "passcode", value: passcode, updatedAt: new Date() } },
-      { upsert: true }
-    );
+    await db
+      .collection("config")
+      .updateOne(
+        { key: "passcode" },
+        { $set: { key: "passcode", value: passcode, updatedAt: new Date() } },
+        { upsert: true }
+      );
 
     return NextResponse.json({ success: true });
   } catch (error) {

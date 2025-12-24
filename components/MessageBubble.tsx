@@ -38,8 +38,11 @@ interface MessageBubbleProps {
     createdAt: string | Date;
     seenAt?: string | Date;
     reactions?: Reaction[];
+    isDeleted?: boolean; // Flag to indicate if message is deleted (for Bubu)
+    deletedFor?: string[]; // Array of user IDs who deleted this message
   };
   currentUserId: string;
+  currentUserName: string;
   senderName: string;
   onDelete?: (messageId: string) => void;
   isNoteMode?: boolean; // When true, show as centered note
@@ -53,6 +56,7 @@ interface MessageBubbleProps {
 export function MessageBubble({
   message,
   currentUserId,
+  currentUserName,
   senderName,
   onDelete,
   isNoteMode = false,
@@ -68,11 +72,17 @@ export function MessageBubble({
     : isCurrentUser
     ? "items-end"
     : "items-start";
-  const bubbleColor = isNoteMode
-    ? "bg-muted text-muted-foreground"
-    : isCurrentUser
-    ? "bg-muted text-muted-foreground"
-    : "bg-muted text-muted-foreground";
+
+  // For Bubu: Show deleted messages with red background
+  const isDeleted = message.isDeleted || false;
+  const bubbleColor =
+    isDeleted && currentUserName === "Bubu"
+      ? "bg-destructive/20 text-destructive-foreground border border-destructive/50"
+      : isNoteMode
+      ? "bg-muted text-muted-foreground"
+      : isCurrentUser
+      ? "bg-muted text-muted-foreground"
+      : "bg-muted text-muted-foreground";
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showImageModal, setShowImageModal] = useState(false);
   const [showReactionDialog, setShowReactionDialog] = useState(false);
@@ -299,31 +309,33 @@ export function MessageBubble({
             </div>
           )}
         </div>
-        {isCurrentUser && onDelete && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-6 w-6 text-destructive hover:text-destructive hover:bg-destructive/10"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setShowDeleteDialog(true);
-                }}
-                disabled={isDeleting}
-              >
-                {isDeleting ? (
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                ) : (
-                  <Trash2 className="h-3 w-3" />
-                )}
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>
-              <p>Delete message</p>
-            </TooltipContent>
-          </Tooltip>
-        )}
+        {isCurrentUser &&
+          onDelete &&
+          (currentUserName === "Bubu" || currentUserName === "Dudu") && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6 text-destructive hover:text-destructive hover:bg-destructive/10"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowDeleteDialog(true);
+                  }}
+                  disabled={isDeleting}
+                >
+                  {isDeleting ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : (
+                    <Trash2 className="h-3 w-3" />
+                  )}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Delete message</p>
+              </TooltipContent>
+            </Tooltip>
+          )}
       </div>
       <div
         className={`flex items-center gap-2 mt-1 ${

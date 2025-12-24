@@ -93,8 +93,8 @@ export function ChatWindow({
 
     try {
       const url = beforeId
-        ? `/api/messages?limit=50&before=${beforeId}`
-        : "/api/messages?limit=50";
+        ? `/api/messages?limit=50&before=${beforeId}&userId=${currentUserId}&userName=${currentUserName}`
+        : `/api/messages?limit=50&userId=${currentUserId}&userName=${currentUserName}`;
       const response = await fetch(url);
       if (response.ok) {
         const data = await response.json();
@@ -382,17 +382,29 @@ export function ChatWindow({
   };
 
   const handleDeleteMessage = async (messageId: string) => {
+    // Both Bubu and Dudu can delete messages
+    if (currentUserName !== "Bubu" && currentUserName !== "Dudu") {
+      toast.error("Only Bubu and Dudu can delete messages");
+      return;
+    }
+
     setDeletingMessage(messageId);
     try {
       const response = await fetch(`/api/messages/${messageId}`, {
         method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId: currentUserId,
+          userName: currentUserName,
+        }),
       });
 
       if (response.ok) {
         await fetchMessages();
         toast.success("Message deleted successfully");
       } else {
-        toast.error("Failed to delete message");
+        const data = await response.json();
+        toast.error(data.error || "Failed to delete message");
       }
     } catch (error) {
       console.error("Error deleting message:", error);
@@ -519,7 +531,7 @@ export function ChatWindow({
           </Tooltip>
           {chatMode && (
             <>
-              {currentUserName === "Shaheer" && (
+              {currentUserName === "Bubu" && (
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Button
@@ -569,7 +581,7 @@ export function ChatWindow({
                   <p>Clear chat</p>
                 </TooltipContent>
               </Tooltip>
-              {currentUserName === "Shaheer" && (
+              {currentUserName === "Bubu" && (
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Button
@@ -620,6 +632,7 @@ export function ChatWindow({
                   key={message._id}
                   message={message}
                   currentUserId={currentUserId}
+                  currentUserName={currentUserName}
                   senderName={getUserName(message.senderUserId)}
                   onDelete={handleDeleteMessage}
                   isNoteMode={!chatMode}
