@@ -10,7 +10,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Eye, EyeOff, Copy, Check } from "lucide-react";
+import { Eye, EyeOff, Copy, Check, Sun, Moon, Square, Bell } from "lucide-react";
 import { toast } from "sonner";
 
 interface PasscodeModalProps {
@@ -26,6 +26,8 @@ export function PasscodeModal({ open, onPasscodeCorrect }: PasscodeModalProps) {
   const [showPasscodeModal, setShowPasscodeModal] = useState(false);
   const [storedPasscode, setStoredPasscode] = useState("");
   const [copied, setCopied] = useState(false);
+  const [sendingMessage, setSendingMessage] = useState(false);
+  const [hasUserSession, setHasUserSession] = useState(false);
   const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
   const isLongPressingRef = useRef(false);
 
@@ -96,11 +98,93 @@ export function PasscodeModal({ open, onPasscodeCorrect }: PasscodeModalProps) {
     }
   };
 
+  const getMessageText = (type: "morning" | "night" | "busy" | "buzz") => {
+    const currentUserId = localStorage.getItem("chatUserId");
+    const currentUserName = localStorage.getItem("chatUserName");
+    
+    if (!currentUserId || !currentUserName) {
+      return "";
+    }
+
+    // Determine the other user's name
+    const otherUserName = currentUserName === "Bubu" ? "Dudu" : "Bubu";
+
+    switch (type) {
+      case "morning":
+        return `Assalam-u-alaikum good morning ${otherUserName} m uth kr fresh hona ja rhi miss u`;
+      case "night":
+        return `${otherUserName} aj sb h sth is lia m app open kr k msg nhi kr rhi snap bhi nhi ki na whatsapp ap preshan nhi hona m thk ho yad you or so jna m bhi so jao gi`;
+      case "busy":
+        return `${otherUserName} abhi thora busy ho but yad ho dheer sara jldi kro gi bat time dekh k`;
+      case "buzz":
+        return `bhooot saraa pyar yaad you khana pina acha s m bhi kh rhi ho khayal rkho m bhi rkh rhi ho or heart p hand yhi h hm ek dosra k pass`;
+      default:
+        return "";
+    }
+  };
+
+  const handleSendQuickMessage = async (type: "morning" | "night" | "busy" | "buzz") => {
+    const currentUserId = localStorage.getItem("chatUserId");
+    const currentUserName = localStorage.getItem("chatUserName");
+
+    if (!currentUserId || !currentUserName) {
+      toast.error("User not found. Please login first.");
+      return;
+    }
+
+    const messageText = getMessageText(type);
+    if (!messageText) {
+      toast.error("Failed to generate message");
+      return;
+    }
+
+    setSendingMessage(true);
+
+    try {
+      const response = await fetch("/api/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          senderUserId: currentUserId,
+          text: messageText,
+        }),
+      });
+
+      if (response.ok) {
+        toast.success("Done");
+      } else {
+        toast.error("Failed to send message");
+      }
+    } catch (error) {
+      console.error("Error sending message:", error);
+      toast.error("Failed to send message");
+    } finally {
+      setSendingMessage(false);
+    }
+  };
+
   useEffect(() => {
+    // Check if user session exists
+    const checkUserSession = () => {
+      const userId = localStorage.getItem("chatUserId");
+      const userName = localStorage.getItem("chatUserName");
+      setHasUserSession(!!(userId && userName));
+    };
+
+    checkUserSession();
+    
+    // Listen for storage changes (in case user logs in/out in another tab)
+    const handleStorageChange = () => {
+      checkUserSession();
+    };
+    
+    window.addEventListener("storage", handleStorageChange);
+    
     return () => {
       if (longPressTimerRef.current) {
         clearTimeout(longPressTimerRef.current);
       }
+      window.removeEventListener("storage", handleStorageChange);
     };
   }, []);
 
@@ -133,7 +217,7 @@ export function PasscodeModal({ open, onPasscodeCorrect }: PasscodeModalProps) {
                 setError("");
               }}
               autoFocus
-              disabled={loading}
+              disabled={loading || sendingMessage}
               className="pr-10"
             />
             <Button
@@ -142,7 +226,7 @@ export function PasscodeModal({ open, onPasscodeCorrect }: PasscodeModalProps) {
               size="icon"
               className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
               onClick={() => setShowPassword(!showPassword)}
-              disabled={loading}
+              disabled={loading || sendingMessage}
             >
               {showPassword ? (
                 <EyeOff className="h-4 w-4 text-muted-foreground" />
@@ -152,9 +236,59 @@ export function PasscodeModal({ open, onPasscodeCorrect }: PasscodeModalProps) {
             </Button>
           </div>
           {error && <p className="text-sm text-destructive">{error}</p>}
-          <Button type="submit" className="w-full" disabled={loading}>
+          <Button type="submit" className="w-full" disabled={loading || sendingMessage}>
             {loading ? "Verifying..." : "Enter"}
           </Button>
+          
+          {/* Quick Message Buttons - Only show if user session exists */}
+          {hasUserSession && (
+            <div className="flex gap-2 justify-center pt-2 border-t">
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              onClick={() => handleSendQuickMessage("morning")}
+              disabled={loading || sendingMessage}
+              className="flex-shrink-0"
+              title="Good Morning"
+            >
+              <Sun className="h-4 w-4" />
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              onClick={() => handleSendQuickMessage("night")}
+              disabled={loading || sendingMessage}
+              className="flex-shrink-0"
+              title="Good Night"
+            >
+              <Moon className="h-4 w-4" />
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              onClick={() => handleSendQuickMessage("busy")}
+              disabled={loading || sendingMessage}
+              className="flex-shrink-0"
+              title="Busy"
+            >
+              <Square className="h-4 w-4" />
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              onClick={() => handleSendQuickMessage("buzz")}
+              disabled={loading || sendingMessage}
+              className="flex-shrink-0"
+              title="Reminder"
+            >
+              <Bell className="h-4 w-4" />
+            </Button>
+            </div>
+          )}
         </form>
       </DialogContent>
 

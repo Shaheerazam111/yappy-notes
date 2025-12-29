@@ -119,10 +119,40 @@ export async function POST(request: NextRequest) {
 }
 
 // DELETE - Delete all messages (clear chat)
-export async function DELETE() {
+// If Bubu: hard delete (actually delete from DB)
+// Otherwise: soft delete (mark as deleted by adding userId to deletedFor array)
+export async function DELETE(request: NextRequest) {
   try {
+    const { userId, userName } = await request.json().catch(() => ({}));
+    
+    if (!userId || !userName) {
+      return NextResponse.json(
+        { error: "userId and userName are required" },
+        { status: 400 }
+      );
+    }
+
     const db = await getDb();
-    await db.collection("messages").deleteMany({});
+
+    if (userName === "Bubu") {
+      // Hard delete: Actually delete all messages from DB
+      await db.collection("messages").deleteMany({});
+    } else {
+      // Soft delete: Mark all messages as deleted for this user
+      // Update all messages that don't already have this userId in deletedFor
+      await db.collection("messages").updateMany(
+        {
+          $or: [
+            { deletedFor: { $exists: false } },
+            { deletedFor: { $nin: [userId] } },
+          ],
+        },
+        {
+          $push: { deletedFor: userId },
+        }
+      );
+    }
+
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("Error deleting messages:", error);

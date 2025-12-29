@@ -1,16 +1,18 @@
-'use client';
+"use client";
 
-import { useState, useEffect, useRef } from 'react';
-import { usePathname } from 'next/navigation';
-import { PasscodeModal } from '@/components/PasscodeModal';
-import { UsernameModal } from '@/components/UsernameModal';
-import { ChatWindow } from '@/components/ChatWindow';
+import { useState, useEffect, useRef } from "react";
+import { usePathname } from "next/navigation";
+import { PasscodeModal } from "@/components/PasscodeModal";
+import { UsernameModal } from "@/components/UsernameModal";
+import { ChatWindow } from "@/components/ChatWindow";
 
 export default function Home() {
   const [passcodeVerified, setPasscodeVerified] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
-  const [currentUserName, setCurrentUserName] = useState<string>('');
-  const [allUsers, setAllUsers] = useState<Array<{ _id: string; name: string }>>([]);
+  const [currentUserName, setCurrentUserName] = useState<string>("");
+  const [allUsers, setAllUsers] = useState<
+    Array<{ _id: string; name: string }>
+  >([]);
   const [showUsernameModal, setShowUsernameModal] = useState(false);
   const [showPasscodeModal, setShowPasscodeModal] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -23,17 +25,17 @@ export default function Home() {
       try {
         // Always show passcode modal first on app load
         setShowPasscodeModal(true);
-        
+
         // Load users list in background
-        const response = await fetch('/api/users');
+        const response = await fetch("/api/users");
         if (response.ok) {
           const users = await response.json();
           setAllUsers(users);
         }
-        
+
         setLoading(false);
       } catch (error) {
-        console.error('Error initializing app:', error);
+        console.error("Error initializing app:", error);
         setLoading(false);
       }
     };
@@ -44,7 +46,7 @@ export default function Home() {
   // Require passcode on page visibility change (tab switch, minimize, etc.)
   useEffect(() => {
     const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
+      if (document.visibilityState === "visible") {
         // Page became visible - require passcode again if it was previously hidden
         if (wasVisibleRef.current === false && passcodeVerified) {
           setPasscodeVerified(false);
@@ -58,12 +60,12 @@ export default function Home() {
     };
 
     // Set initial visibility state
-    wasVisibleRef.current = document.visibilityState === 'visible';
+    wasVisibleRef.current = document.visibilityState === "visible";
 
-    document.addEventListener('visibilitychange', handleVisibilityChange);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
 
     return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [passcodeVerified]);
 
@@ -79,20 +81,22 @@ export default function Home() {
   const handlePasscodeCorrect = async () => {
     setPasscodeVerified(true);
     setShowPasscodeModal(false);
-    
+
     // After passcode verification, check for stored user
-    const storedUserId = localStorage.getItem('chatUserId');
-    const storedUserName = localStorage.getItem('chatUserName');
+    const storedUserId = localStorage.getItem("chatUserId");
+    const storedUserName = localStorage.getItem("chatUserName");
 
     if (storedUserId && storedUserName) {
       // Verify user exists in DB
       try {
-        const response = await fetch('/api/users');
+        const response = await fetch("/api/users");
         if (response.ok) {
           const users = await response.json();
           setAllUsers(users);
-          const userExists = users.some((u: { _id: string }) => u._id === storedUserId);
-          
+          const userExists = users.some(
+            (u: { _id: string }) => u._id === storedUserId
+          );
+
           if (userExists) {
             // Use stored user
             setCurrentUserId(storedUserId);
@@ -101,7 +105,7 @@ export default function Home() {
           }
         }
       } catch (error) {
-        console.error('Error verifying user:', error);
+        console.error("Error verifying user:", error);
       }
     }
 
@@ -114,13 +118,13 @@ export default function Home() {
     setCurrentUserName(userName);
     setShowUsernameModal(false);
     // Store in localStorage for persistent storage across sessions
-    localStorage.setItem('chatUserId', userId);
-    localStorage.setItem('chatUserName', userName);
+    localStorage.setItem("chatUserId", userId);
+    localStorage.setItem("chatUserName", userName);
     // Refresh users list
-    fetch('/api/users')
+    fetch("/api/users")
       .then((res) => res.json())
       .then((users) => setAllUsers(users))
-      .catch((err) => console.error('Error fetching users:', err));
+      .catch((err) => console.error("Error fetching users:", err));
   };
 
   if (loading) {
@@ -133,7 +137,9 @@ export default function Home() {
 
   // Show passcode modal only on first login (when no users exist)
   if (showPasscodeModal) {
-    return <PasscodeModal open={true} onPasscodeCorrect={handlePasscodeCorrect} />;
+    return (
+      <PasscodeModal open={true} onPasscodeCorrect={handlePasscodeCorrect} />
+    );
   }
 
   // Show username modal if needed

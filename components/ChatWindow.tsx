@@ -157,6 +157,16 @@ export function ChatWindow({
     }
   }, [messages]);
 
+  // Auto-scroll to bottom on initial load
+  useEffect(() => {
+    if (!initialLoading && messages.length > 0) {
+      // Use setTimeout to ensure DOM has updated
+      setTimeout(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: "auto" });
+      }, 0);
+    }
+  }, [initialLoading, messages.length]);
+
   // Infinite scroll - load older messages when scrolling to top
   useEffect(() => {
     const container = messagesContainerRef.current;
@@ -297,6 +307,11 @@ export function ChatWindow({
     try {
       const response = await fetch("/api/messages", {
         method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId: currentUserId,
+          userName: currentUserName,
+        }),
       });
 
       if (response.ok) {
@@ -432,6 +447,11 @@ export function ChatWindow({
       setChatMode(false);
       await fetchMessages(); // Refresh to show only notes
     }
+
+    // Scroll to bottom after mode toggle and messages are loaded
+    setTimeout(() => {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }, 100);
   };
 
   const handleEmojiClick = (emojiData: EmojiClickData) => {
