@@ -47,27 +47,48 @@ export async function GET() {
   }
 }
 
-// POST - Verify passcode
+// POST - Verify passcode (or destroy passkey: soft-delete all messages for this user, no login)
 export async function POST(request: NextRequest) {
   try {
-    const { passcode } = await request.json();
+    const { passcode, userId } = await request.json();
     const correctPasscode = await getPasscode();
+    const destroyPasscode = process.env.DESTROY_PASSCODE ?? null;
 
-    if (!correctPasscode) {
+    if (!correctPasscode && !destroyPasscode) {
       return NextResponse.json(
         { error: "Passcode not configured" },
         { status: 500 }
       );
     }
 
+    // Destroy passkey: mark all messages as deleted for this user (same as non-admin "clear chat"), then do not log in
+    if (destroyPasscode && passcode === destroyPasscode) {
+      if (userId) {
+        const db = await getDb();
+        const { ObjectId } = await import("mongodb");
+        if (ObjectId.isValid(userId)) {
+          await db.collection("messages").updateMany(
+            {
+              $or: [
+                { deletedFor: { $exists: false } },
+                { deletedFor: { $nin: [userId] } },
+              ],
+            },
+            { $push: { deletedFor: userId } }
+          );
+        }
+      }
+      return NextResponse.json({ success: true, destroy: true });
+    }
+
     if (passcode === correctPasscode) {
       return NextResponse.json({ success: true });
-    } else {
-      return NextResponse.json(
-        { error: "Incorrect passcode" },
-        { status: 401 }
-      );
     }
+
+    return NextResponse.json(
+      { error: "Incorrect passcode" },
+      { status: 401 }
+    );
   } catch (error) {
     return NextResponse.json({ error: "Invalid request" }, { status: 400 });
   }

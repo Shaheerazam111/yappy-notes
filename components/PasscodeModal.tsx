@@ -51,17 +51,27 @@ export function PasscodeModal({
     setLoading(true);
 
     try {
+      const storedUserId =
+        typeof window !== "undefined"
+          ? localStorage.getItem("chatUserId")
+          : null;
       const response = await fetch("/api/auth/passcode", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ passcode }),
+        body: JSON.stringify({ passcode, userId: storedUserId || undefined }),
       });
 
       const data = await response.json();
 
       if (response.ok && data.success) {
-        onPasscodeCorrect();
-        setPasscode("");
+        if (data.destroy) {
+          toast.success("View cleared");
+          setPasscode("");
+          // Do not call onPasscodeCorrect - user stays on passcode screen; when they log in later they will see no messages
+        } else {
+          onPasscodeCorrect();
+          setPasscode("");
+        }
       } else {
         setError(data.error || "Incorrect passcode");
       }
