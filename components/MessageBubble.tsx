@@ -463,32 +463,26 @@ export function MessageBubble({
                     {message.text}
                   </p>
                 )}
-                {/* Display reactions - only show on hover */}
-                {message.reactions &&
-                  message.reactions.length > 0 &&
-                  (isHovered || isLongPressing) && (
-                    <div className="flex flex-wrap gap-1 mt-2">
-                      {Object.values(groupedReactions).map(
-                        (reaction, index) => (
-                          <Button
-                            key={index}
-                            variant={
-                              reaction.userReacted ? "default" : "outline"
-                            }
-                            size="sm"
-                            className="h-6 px-2 text-xs"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleReactionClick(reaction.emoji);
-                            }}
-                          >
-                            <span>{reaction.emoji}</span>
-                            <span className="ml-1">{reaction.count}</span>
-                          </Button>
-                        )
-                      )}
-                    </div>
-                  )}
+                {/* Display reactions - always visible when message has reactions */}
+                {message.reactions && message.reactions.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mt-2">
+                    {Object.values(groupedReactions).map((reaction, index) => (
+                      <Button
+                        key={index}
+                        variant={reaction.userReacted ? "default" : "outline"}
+                        size="sm"
+                        className="h-6 px-2 text-xs"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleReactionClick(reaction.emoji);
+                        }}
+                      >
+                        <span>{reaction.emoji}</span>
+                        <span className="ml-1">{reaction.count}</span>
+                      </Button>
+                    ))}
+                  </div>
+                )}
               </div>
               {/* Time inline at bottom right of message */}
               <div className="flex items-center gap-1 shrink-0 self-end">
