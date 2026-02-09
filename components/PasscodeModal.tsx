@@ -10,15 +10,29 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Eye, EyeOff, Copy, Check, Sun, Moon, Square, Bell } from "lucide-react";
+import {
+  Eye,
+  EyeOff,
+  Copy,
+  Check,
+  Sun,
+  Moon,
+  Square,
+  Bell,
+} from "lucide-react";
 import { toast } from "sonner";
 
 interface PasscodeModalProps {
   open: boolean;
   onPasscodeCorrect: () => void;
+  allUsers?: Array<{ _id: string; name: string }>;
 }
 
-export function PasscodeModal({ open, onPasscodeCorrect }: PasscodeModalProps) {
+export function PasscodeModal({
+  open,
+  onPasscodeCorrect,
+  allUsers = [],
+}: PasscodeModalProps) {
   const [passcode, setPasscode] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -101,13 +115,13 @@ export function PasscodeModal({ open, onPasscodeCorrect }: PasscodeModalProps) {
   const getMessageText = (type: "morning" | "night" | "busy" | "buzz") => {
     const currentUserId = localStorage.getItem("chatUserId");
     const currentUserName = localStorage.getItem("chatUserName");
-    
+
     if (!currentUserId || !currentUserName) {
       return "";
     }
 
-    // Determine the other user's name
-    const otherUserName = currentUserName === "Bubu" ? "Dudu" : "Bubu";
+    const otherUser = allUsers.find((u) => u._id !== currentUserId);
+    const otherUserName = otherUser?.name ?? "there";
 
     switch (type) {
       case "morning":
@@ -123,7 +137,9 @@ export function PasscodeModal({ open, onPasscodeCorrect }: PasscodeModalProps) {
     }
   };
 
-  const handleSendQuickMessage = async (type: "morning" | "night" | "busy" | "buzz") => {
+  const handleSendQuickMessage = async (
+    type: "morning" | "night" | "busy" | "buzz"
+  ) => {
     const currentUserId = localStorage.getItem("chatUserId");
     const currentUserName = localStorage.getItem("chatUserName");
 
@@ -172,14 +188,14 @@ export function PasscodeModal({ open, onPasscodeCorrect }: PasscodeModalProps) {
     };
 
     checkUserSession();
-    
+
     // Listen for storage changes (in case user logs in/out in another tab)
     const handleStorageChange = () => {
       checkUserSession();
     };
-    
+
     window.addEventListener("storage", handleStorageChange);
-    
+
     return () => {
       if (longPressTimerRef.current) {
         clearTimeout(longPressTimerRef.current);
@@ -190,7 +206,7 @@ export function PasscodeModal({ open, onPasscodeCorrect }: PasscodeModalProps) {
 
   return (
     <Dialog open={open}>
-      <DialogContent className="sm:max-w-[425px]">
+      <DialogContent className="sm:max-w-[425px] select-none">
         <DialogHeader>
           <DialogTitle
             onMouseDown={handleLongPressStart}
@@ -198,7 +214,7 @@ export function PasscodeModal({ open, onPasscodeCorrect }: PasscodeModalProps) {
             onMouseLeave={handleLongPressEnd}
             onTouchStart={handleLongPressStart}
             onTouchEnd={handleLongPressEnd}
-            className="cursor-pointer select-none"
+            className="cursor-pointer"
           >
             Enter Passcode
           </DialogTitle>
@@ -236,57 +252,61 @@ export function PasscodeModal({ open, onPasscodeCorrect }: PasscodeModalProps) {
             </Button>
           </div>
           {error && <p className="text-sm text-destructive">{error}</p>}
-          <Button type="submit" className="w-full" disabled={loading || sendingMessage}>
+          <Button
+            type="submit"
+            className="w-full"
+            disabled={loading || sendingMessage}
+          >
             {loading ? "Verifying..." : "Enter"}
           </Button>
-          
+
           {/* Quick Message Buttons - Only show if user session exists */}
           {hasUserSession && (
             <div className="flex gap-2 justify-center pt-2 border-t">
-            <Button
-              type="button"
-              variant="outline"
-              size="icon"
-              onClick={() => handleSendQuickMessage("morning")}
-              disabled={loading || sendingMessage}
-              className="flex-shrink-0"
-              title="Good Morning"
-            >
-              <Sun className="h-4 w-4" />
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="icon"
-              onClick={() => handleSendQuickMessage("night")}
-              disabled={loading || sendingMessage}
-              className="flex-shrink-0"
-              title="Good Night"
-            >
-              <Moon className="h-4 w-4" />
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="icon"
-              onClick={() => handleSendQuickMessage("busy")}
-              disabled={loading || sendingMessage}
-              className="flex-shrink-0"
-              title="Busy"
-            >
-              <Square className="h-4 w-4" />
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="icon"
-              onClick={() => handleSendQuickMessage("buzz")}
-              disabled={loading || sendingMessage}
-              className="flex-shrink-0"
-              title="Reminder"
-            >
-              <Bell className="h-4 w-4" />
-            </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                onClick={() => handleSendQuickMessage("morning")}
+                disabled={loading || sendingMessage}
+                className="shrink-0"
+                title="Good Morning"
+              >
+                <Sun className="h-4 w-4" />
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                onClick={() => handleSendQuickMessage("night")}
+                disabled={loading || sendingMessage}
+                className="shrink-0"
+                title="Good Night"
+              >
+                <Moon className="h-4 w-4" />
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                onClick={() => handleSendQuickMessage("busy")}
+                disabled={loading || sendingMessage}
+                className="shrink-0"
+                title="Busy"
+              >
+                <Square className="h-4 w-4" />
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                onClick={() => handleSendQuickMessage("buzz")}
+                disabled={loading || sendingMessage}
+                className="shrink-0"
+                title="Reminder"
+              >
+                <Bell className="h-4 w-4" />
+              </Button>
             </div>
           )}
         </form>

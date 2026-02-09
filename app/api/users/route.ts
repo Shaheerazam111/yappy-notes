@@ -1,12 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 
-// GET - Get all users (for debugging, or get current user)
+// GET - Get all users (with isAdmin; default false for existing users)
 export async function GET(request: NextRequest) {
   try {
     const db = await getDb();
     const users = await db.collection('users').find({}).toArray();
-    return NextResponse.json(users);
+    const normalized = users.map((u: Record<string, unknown>) => ({
+      _id: String(u._id ?? ''),
+      name: String(u.name ?? ''),
+      isAdmin: u.isAdmin === true,
+    }));
+    return NextResponse.json(normalized);
   } catch (error) {
     console.error('Error fetching users:', error);
     return NextResponse.json(
@@ -37,25 +42,28 @@ export async function POST(request: NextRequest) {
     });
 
     if (existingUser) {
-      // Return existing user
       return NextResponse.json({
         _id: existingUser._id.toString(),
         name: existingUser.name,
         createdAt: existingUser.createdAt,
+        isAdmin: existingUser.isAdmin === true,
       });
     }
 
-    // Create new user if doesn't exist
+    const hasAnyUser = (await db.collection('users').countDocuments({})) > 0;
     const user = {
       name: trimmedName,
       createdAt: new Date(),
+      isAdmin: !hasAnyUser,
     };
 
     const result = await db.collection('users').insertOne(user);
-    
+
     return NextResponse.json({
       _id: result.insertedId.toString(),
-      ...user,
+      name: user.name,
+      createdAt: user.createdAt,
+      isAdmin: user.isAdmin,
     });
   } catch (error) {
     console.error('Error creating user:', error);

@@ -11,7 +11,7 @@ export default function Home() {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [currentUserName, setCurrentUserName] = useState<string>("");
   const [allUsers, setAllUsers] = useState<
-    Array<{ _id: string; name: string }>
+    Array<{ _id: string; name: string; isAdmin?: boolean }>
   >([]);
   const [showUsernameModal, setShowUsernameModal] = useState(false);
   const [showPasscodeModal, setShowPasscodeModal] = useState(false);
@@ -43,36 +43,38 @@ export default function Home() {
     initializeApp();
   }, []);
 
-  // Require passcode on page visibility change (tab switch, minimize, etc.)
+  // Require passcode on page visibility change (tab switch, minimize) - unless user disabled in Settings
   useEffect(() => {
+    const skipRecheck =
+      localStorage.getItem("chatSkipSessionRecheck") === "true";
+
     const handleVisibilityChange = () => {
       if (document.visibilityState === "visible") {
-        // Page became visible - require passcode again if it was previously hidden
-        if (wasVisibleRef.current === false && passcodeVerified) {
+        if (
+          wasVisibleRef.current === false &&
+          passcodeVerified &&
+          !skipRecheck
+        ) {
           setPasscodeVerified(false);
           setShowPasscodeModal(true);
         }
         wasVisibleRef.current = true;
       } else {
-        // Page became hidden
         wasVisibleRef.current = false;
       }
     };
 
-    // Set initial visibility state
     wasVisibleRef.current = document.visibilityState === "visible";
-
     document.addEventListener("visibilitychange", handleVisibilityChange);
-
-    return () => {
+    return () =>
       document.removeEventListener("visibilitychange", handleVisibilityChange);
-    };
   }, [passcodeVerified]);
 
-  // Require passcode on route/pathname change
+  // Require passcode on route/pathname change - unless user disabled in Settings
   useEffect(() => {
-    if (pathname && passcodeVerified) {
-      // Pathname changed - require passcode again
+    const skipRecheck =
+      localStorage.getItem("chatSkipSessionRecheck") === "true";
+    if (pathname && passcodeVerified && !skipRecheck) {
       setPasscodeVerified(false);
       setShowPasscodeModal(true);
     }
@@ -138,7 +140,11 @@ export default function Home() {
   // Show passcode modal only on first login (when no users exist)
   if (showPasscodeModal) {
     return (
-      <PasscodeModal open={true} onPasscodeCorrect={handlePasscodeCorrect} />
+      <PasscodeModal
+        open={true}
+        onPasscodeCorrect={handlePasscodeCorrect}
+        allUsers={allUsers}
+      />
     );
   }
 
@@ -168,11 +174,24 @@ export default function Home() {
     );
   }
 
+  const refreshUsers = async () => {
+    try {
+      const response = await fetch("/api/users");
+      if (response.ok) {
+        const users = await response.json();
+        setAllUsers(users);
+      }
+    } catch (err) {
+      console.error("Error refreshing users:", err);
+    }
+  };
+
   return (
     <ChatWindow
       currentUserId={currentUserId}
       currentUserName={currentUserName}
       allUsers={allUsers}
+      onRefreshUsers={refreshUsers}
     />
   );
 }

@@ -2,27 +2,18 @@ import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { ObjectId } from "mongodb";
 
-// DELETE - Soft delete a single message by ID (both Bubu and Dudu can delete)
 export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const { id } = await params;
-    const { userId, userName } = await request.json().catch(() => ({}));
+    const { userId } = await request.json().catch(() => ({}));
 
     if (!id) {
       return NextResponse.json(
         { error: "Message ID is required" },
         { status: 400 }
-      );
-    }
-
-    // Both Bubu and Dudu can delete messages
-    if (userName !== "Bubu" && userName !== "Dudu") {
-      return NextResponse.json(
-        { error: "Unauthorized: Only Bubu and Dudu can delete messages" },
-        { status: 403 }
       );
     }
 
@@ -34,6 +25,13 @@ export async function DELETE(
     }
 
     const db = await getDb();
+    const user = await db.collection("users").findOne({ _id: new ObjectId(userId) });
+    if (user?.isAdmin !== true) {
+      return NextResponse.json(
+        { error: "Unauthorized: Only admin can delete messages" },
+        { status: 403 }
+      );
+    }
 
     // Validate ObjectId format
     if (!ObjectId.isValid(id)) {

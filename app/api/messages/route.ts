@@ -6,40 +6,38 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const limit = parseInt(searchParams.get("limit") || "50");
-    const before = searchParams.get("before"); // Message ID to fetch messages before
-    const userId = searchParams.get("userId"); // Current user ID to filter deleted messages
-    const userName = searchParams.get("userName"); // Current user name (Bubu or Dudu)
+    const before = searchParams.get("before");
+    const userId = searchParams.get("userId");
 
     const db = await getDb();
     let query: any = {};
 
-    // For Dudu: Filter out messages deleted for Dudu
-    // For Bubu: Show all messages (including deleted ones) - no filtering
-    if (userId && userName !== "Bubu") {
-      // All users except Bubu cannot see messages deleted for them
+    const { ObjectId } = await import("mongodb");
+    const currentUser =
+      userId && ObjectId.isValid(userId)
+        ? await db.collection("users").findOne({ _id: new ObjectId(userId) })
+        : null;
+    const isAdmin = currentUser?.isAdmin === true;
+
+    if (userId && !isAdmin) {
       query.$or = [
         { deletedFor: { $exists: false } },
         { deletedFor: { $nin: [userId] } },
       ];
     }
-    // For Bubu, no filtering - show all messages
 
-    // If 'before' is provided, fetch messages created before that message
-    if (before) {
-      const { ObjectId } = await import("mongodb");
-      if (ObjectId.isValid(before)) {
-        const beforeMessage = await db.collection("messages").findOne({
-          _id: new ObjectId(before),
+    if (before && ObjectId.isValid(before)) {
+      const beforeMessage = await db.collection("messages").findOne({
+        _id: new ObjectId(before),
+      });
+      if (beforeMessage) {
+        query.createdAt = { $lt: beforeMessage.createdAt };
+      } else {
+        // If message not found, return empty
+        return NextResponse.json({
+          messages: [],
+          hasMore: false,
         });
-        if (beforeMessage) {
-          query.createdAt = { $lt: beforeMessage.createdAt };
-        } else {
-          // If message not found, return empty
-          return NextResponse.json({
-            messages: [],
-            hasMore: false,
-          });
-        }
       }
     }
 
@@ -53,8 +51,7 @@ export async function GET(request: NextRequest) {
     const hasMore = messages.length > limit;
     const resultMessages = hasMore ? messages.slice(0, limit) : messages;
 
-    // For Bubu: Mark deleted messages with isDeleted flag (any message that has been deleted by anyone)
-    if (userName === "Bubu" && userId) {
+    if (isAdmin && userId) {
       resultMessages.forEach((msg: any) => {
         msg.isDeleted = msg.deletedFor && msg.deletedFor.length > 0;
       });
@@ -76,10 +73,11 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST - Create a new message
+// POST - Create a new message (optionally as reply to another message)
 export async function POST(request: NextRequest) {
   try {
-    const { senderUserId, text, imageBase64 } = await request.json();
+    const { senderUserId, text, imageBase64, replyToMessageId } =
+      await request.json();
 
     if (!senderUserId) {
       return NextResponse.json(
@@ -96,12 +94,31 @@ export async function POST(request: NextRequest) {
     }
 
     const db = await getDb();
-    const message = {
+    const message: Record<string, unknown> = {
       senderUserId,
       text: text || null,
       imageBase64: imageBase64 || null,
       createdAt: new Date(),
     };
+
+    if (replyToMessageId) {
+      const { ObjectId } = await import("mongodb");
+      if (ObjectId.isValid(replyToMessageId)) {
+        const replyToMsg = await db.collection("messages").findOne({
+          _id: new ObjectId(replyToMessageId),
+        });
+        if (replyToMsg) {
+          message.replyToMessageId = replyToMessageId;
+          message.replyToSenderUserId = replyToMsg.senderUserId;
+          const snippet = replyToMsg.text
+            ? String(replyToMsg.text).slice(0, 100)
+            : replyToMsg.imageBase64
+              ? "Photo"
+              : "";
+          message.replyToText = snippet;
+        }
+      }
+    }
 
     const result = await db.collection("messages").insertOne(message);
 
@@ -118,24 +135,24 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// DELETE - Delete all messages (clear chat)
-// If Bubu: hard delete (actually delete from DB)
-// Otherwise: soft delete (mark as deleted by adding userId to deletedFor array)
+// DELETE - Clear chat: admin hard-deletes; others soft-delete (mark deleted for them)
 export async function DELETE(request: NextRequest) {
   try {
-    const { userId, userName } = await request.json().catch(() => ({}));
-    
-    if (!userId || !userName) {
+    const { userId } = await request.json().catch(() => ({}));
+
+    if (!userId) {
       return NextResponse.json(
-        { error: "userId and userName are required" },
+        { error: "userId is required" },
         { status: 400 }
       );
     }
 
     const db = await getDb();
+    const { ObjectId } = await import("mongodb");
+    const user = await db.collection("users").findOne({ _id: new ObjectId(userId) });
+    const isAdmin = user?.isAdmin === true;
 
-    if (userName === "Bubu") {
-      // Hard delete: Actually delete all messages from DB
+    if (isAdmin) {
       await db.collection("messages").deleteMany({});
     } else {
       // Soft delete: Mark all messages as deleted for this user

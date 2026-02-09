@@ -30,25 +30,14 @@ export function UsernameModal({ open, onUsernameSet }: UsernameModalProps) {
       return;
     }
 
-    // Restrict to only Bubu and Dudu
     const trimmedName = name.trim();
-    const allowedNames = ["Dudu", "Bubu"];
-    const matchedName = allowedNames.find(
-      (allowedName) => allowedName.toLowerCase() === trimmedName.toLowerCase()
-    );
-
-    if (!matchedName) {
-      setError("Invalid");
-      return;
-    }
-
     setLoading(true);
 
     try {
       const response = await fetch("/api/users", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: matchedName }),
+        body: JSON.stringify({ name: trimmedName }),
       });
 
       const data = await response.json();

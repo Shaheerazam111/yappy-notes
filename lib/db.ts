@@ -5,7 +5,18 @@ if (!process.env.MONGODB_URI) {
 }
 
 const uri = process.env.MONGODB_URI;
-const options = {};
+const options = {
+  serverSelectionTimeoutMS: 30000, // 30 seconds timeout (increased for slow networks)
+  socketTimeoutMS: 45000, // 45 seconds socket timeout
+  connectTimeoutMS: 30000, // 30 seconds connection timeout
+  maxPoolSize: 10,
+  minPoolSize: 1,
+  retryWrites: true,
+  retryReads: true,
+  // Add these for better connection handling
+  directConnection: false, // Let MongoDB driver handle connection routing
+  heartbeatFrequencyMS: 10000, // Check server status every 10 seconds
+};
 
 let client: MongoClient;
 let clientPromise: Promise<MongoClient>;
@@ -15,17 +26,27 @@ if (process.env.NODE_ENV === "development") {
   // is preserved across module reloads caused by HMR (Hot Module Replacement).
   let globalWithMongo = global as typeof globalThis & {
     _mongoClientPromise?: Promise<MongoClient>;
+    _mongoClient?: MongoClient;
   };
 
   if (!globalWithMongo._mongoClientPromise) {
     client = new MongoClient(uri, options);
-    globalWithMongo._mongoClientPromise = client.connect();
+    globalWithMongo._mongoClient = client;
+    globalWithMongo._mongoClientPromise = client.connect().catch((error) => {
+      console.error("MongoDB connection error:", error);
+      // Reset the promise so it can be retried
+      globalWithMongo._mongoClientPromise = undefined;
+      throw error;
+    });
   }
   clientPromise = globalWithMongo._mongoClientPromise;
 } else {
   // In production mode, it's best to not use a global variable.
   client = new MongoClient(uri, options);
-  clientPromise = client.connect();
+  clientPromise = client.connect().catch((error) => {
+    console.error("MongoDB connection error:", error);
+    throw error;
+  });
 }
 
 // Export a module-scoped MongoClient promise. By doing this in a

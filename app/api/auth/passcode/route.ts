@@ -75,23 +75,30 @@ export async function POST(request: NextRequest) {
 
 export async function PUT(request: NextRequest) {
   try {
-    const { passcode, userName } = await request.json();
+    const { passcode, userId } = await request.json();
 
-    if (!passcode || !userName) {
+    if (!passcode || !userId) {
       return NextResponse.json(
-        { error: "passcode and userName are required" },
+        { error: "passcode and userId are required" },
         { status: 400 }
       );
     }
 
-    if (userName !== "Bubu") {
+    const db = await getDb();
+    const { ObjectId } = await import("mongodb");
+    if (!ObjectId.isValid(userId)) {
       return NextResponse.json(
-        { error: "Unauthorized: Only Bubu can update passcode" },
+        { error: "Invalid userId" },
+        { status: 400 }
+      );
+    }
+    const user = await db.collection("users").findOne({ _id: new ObjectId(userId) });
+    if (user?.isAdmin !== true) {
+      return NextResponse.json(
+        { error: "Unauthorized: Only admin can update passcode" },
         { status: 403 }
       );
     }
-
-    const db = await getDb();
     await db
       .collection("config")
       .updateOne(
