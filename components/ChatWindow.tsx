@@ -1011,6 +1011,15 @@ export function ChatWindow({
                   currentDate.getMonth() !== previousDate.getMonth() ||
                   currentDate.getDate() !== previousDate.getDate();
 
+                // Show sender initial only on last message of a consecutive group from same sender
+                const nextMessage =
+                  index < displayMessages.length - 1
+                    ? displayMessages[index + 1]
+                    : null;
+                const showSenderInitial =
+                  !nextMessage ||
+                  nextMessage.senderUserId !== message.senderUserId;
+
                 return (
                   <MessageBubble
                     key={message._id}
@@ -1034,6 +1043,7 @@ export function ChatWindow({
                     showDateHeader={showDateHeader}
                     previousMessageDate={previousMessage?.createdAt}
                     isAdmin={isAdmin}
+                    showSenderInitial={showSenderInitial}
                   />
                 );
               })

@@ -61,6 +61,7 @@ interface MessageBubbleProps {
   showDateHeader?: boolean; // Show date header if this is first message of the day
   previousMessageDate?: string | Date | null; // Previous message date for comparison
   isAdmin?: boolean; // Current user is admin (can delete messages, see deleted state)
+  showSenderInitial?: boolean; // Show sender initial only on last message of a consecutive group from same sender
 }
 
 export function MessageBubble({
@@ -80,6 +81,7 @@ export function MessageBubble({
   showDateHeader = false,
   previousMessageDate,
   isAdmin = false,
+  showSenderInitial = false,
 }: MessageBubbleProps) {
   const isCurrentUser = message.senderUserId === currentUserId;
   const alignment = isNoteMode
@@ -530,8 +532,8 @@ export function MessageBubble({
             </Tooltip>
           )}
         </div>
-        {/* Sender initial - only show for non-current user messages */}
-        {!isNoteMode && !isCurrentUser && (
+        {/* Sender initial - only on last message of consecutive group from same sender */}
+        {!isNoteMode && !isCurrentUser && showSenderInitial && (
           <div className="flex items-center gap-1 mt-1 max-w-[80%] md:max-w-[60%]">
             <div className="flex items-center justify-center w-5 h-5 rounded-full bg-muted/50 text-[10px] font-medium text-muted-foreground border border-border/50">
               {senderName.charAt(0).toUpperCase()}
