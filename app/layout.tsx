@@ -14,13 +14,13 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Yappy Heart",
-  description: "A notes app for Yappy Heart",
+  title: "Yappy Notes",
+  description: "A notes app for Yappy Notes",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "Yappy Heart",
+    title: "Yappy Notes",
   },
 };
 

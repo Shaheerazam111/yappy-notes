@@ -2,9 +2,9 @@ import { MetadataRoute } from 'next'
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: 'Yappy Heart',
-    short_name: 'Yappy Heart',
-    description: 'A notes app for Yappy Heart',
+    name: 'Yappy Notes',
+    short_name: 'Yappy Notes',
+    description: 'A notes app for Yappy Notes',
     start_url: '/',
     display: 'standalone',
     background_color: '#000000',
