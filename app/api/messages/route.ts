@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
+import { sendPushForNewMessage, isPushConfigured } from "@/lib/push";
 
 // GET - Fetch messages with pagination support
 export async function GET(request: NextRequest) {
@@ -125,6 +126,28 @@ export async function POST(request: NextRequest) {
     }
 
     const result = await db.collection("messages").insertOne(message);
+
+    // Send Web Push to users who opted in (free, works when app is closed)
+    if (isPushConfigured()) {
+      const { ObjectId } = await import("mongodb");
+      const sender = await db
+        .collection("users")
+        .findOne({ _id: new ObjectId(senderUserId as string) });
+      const senderName = sender?.name ?? "Someone";
+      const body =
+        typeof message.text === "string"
+          ? message.text.slice(0, 80) + (message.text.length > 80 ? "…" : "")
+          : message.audioBase64
+            ? "Voice note"
+            : message.imageBase64
+              ? "Photo"
+              : "New message";
+      sendPushForNewMessage(
+        senderUserId as string,
+        senderName,
+        body
+      ).catch((err) => console.error("Push send error:", err));
+    }
 
     return NextResponse.json({
       _id: result.insertedId.toString(),

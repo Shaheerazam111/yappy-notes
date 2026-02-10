@@ -1,6 +1,15 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+
+function urlBase64ToUint8Array(base64: string): Uint8Array {
+  const padding = "=".repeat((4 - (base64.length % 4)) % 4);
+  const b64 = (base64 + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const raw = atob(b64);
+  const out = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+  return out;
+}
 import { Button } from "@/components/ui/button";
 import { MessageBubble } from "./MessageBubble";
 import { compressImageToBase64 } from "@/lib/compressImage";
@@ -793,6 +802,19 @@ export function ChatWindow({
     allUsers,
   ]);
 
+  // When notifications are already enabled (e.g. after refresh), re-sync subscription to server
+  useEffect(() => {
+    if (
+      allowBackgroundNotifications &&
+      currentUserId &&
+      typeof Notification !== "undefined" &&
+      Notification.permission === "granted"
+    ) {
+      syncPushSubscription(currentUserId, notifyUserIds).catch(() => {});
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allowBackgroundNotifications, currentUserId]);
+
   // Auto-sync interval
   useEffect(() => {
     if (syncEnabled) {
@@ -838,6 +860,64 @@ export function ChatWindow({
     );
   };
 
+  // Web Push: sync subscription to server (free, works when app is closed)
+  const syncPushSubscription = async (
+    userId: string,
+    notifyUserIdsList: string[]
+  ) => {
+    let vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+    if (!vapidKey) {
+      try {
+        const r = await fetch("/api/push/vapid");
+        if (r.ok) {
+          const d = await r.json();
+          vapidKey = d.publicKey;
+        }
+      } catch (_) {}
+    }
+    if (
+      !vapidKey ||
+      typeof navigator === "undefined" ||
+      !navigator.serviceWorker
+    )
+      return;
+    try {
+      if (!navigator.serviceWorker.controller) {
+        await navigator.serviceWorker.register("/sw.js");
+      }
+      const reg = await navigator.serviceWorker.ready;
+      const sub = await reg.pushManager.getSubscription();
+      if (!sub) {
+        const key = urlBase64ToUint8Array(vapidKey);
+        const newSub = await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: key as BufferSource,
+        });
+        await fetch("/api/push/subscribe", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            userId,
+            subscription: newSub.toJSON(),
+            notifyUserIds: notifyUserIdsList,
+          }),
+        });
+      } else {
+        await fetch("/api/push/subscribe", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            userId,
+            subscription: sub.toJSON(),
+            notifyUserIds: notifyUserIdsList,
+          }),
+        });
+      }
+    } catch (e) {
+      console.error("Push subscription sync error:", e);
+    }
+  };
+
   const handleToggleAllowBackgroundNotifications = async () => {
     if (allowBackgroundNotifications) {
       setAllowBackgroundNotifications(false);
@@ -853,8 +933,9 @@ export function ChatWindow({
     if (permission === "granted") {
       setAllowBackgroundNotifications(true);
       localStorage.setItem("chatAllowBackgroundNotifications", "true");
+      await syncPushSubscription(currentUserId, notifyUserIds);
       toast.success(
-        "Background notifications enabled. Choose who to notify for below."
+        "Notifications enabled. You’ll get pushes even when the app is closed. Choose who to notify for below."
       );
     } else {
       toast.error(
@@ -869,6 +950,8 @@ export function ChatWindow({
         ? prev.filter((id) => id !== userId)
         : [...prev, userId];
       localStorage.setItem("chatNotifyUserIds", JSON.stringify(next));
+      if (allowBackgroundNotifications)
+        syncPushSubscription(currentUserId, next).catch(() => {});
       return next;
     });
   };
@@ -1118,9 +1201,9 @@ export function ChatWindow({
                 <h4 className="text-sm font-medium">Notifications</h4>
               </div>
               <p className="text-xs text-muted-foreground">
-                Get notified when the app is in the background. Enable below,
-                then choose which users to notify for. Turn on auto-sync from
-                the menu so messages are checked in the background.
+                Get notified when you get a message—even when the app is closed
+                (free Web Push). Enable below, then choose which users to notify
+                for.
               </p>
               <div className="flex items-center justify-between gap-4">
                 <Label
