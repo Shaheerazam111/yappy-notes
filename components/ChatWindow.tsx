@@ -16,6 +16,8 @@ import {
   Menu,
   Settings,
   Reply,
+  Mic,
+  Square,
 } from "lucide-react";
 import EmojiPicker, { EmojiClickData, Theme } from "emoji-picker-react";
 import { UpdatePasscodeDialog } from "./UpdatePasscodeDialog";
@@ -45,6 +47,8 @@ interface Message {
   senderUserId: string;
   text?: string | null;
   imageBase64?: string | null;
+  audioBase64?: string | null;
+  audioMimeType?: string | null;
   createdAt: string | Date;
   reactions?: Reaction[];
   status?: "sending" | "sent" | "failed";
@@ -96,12 +100,15 @@ export function ChatWindow({
   const [replyingToMessage, setReplyingToMessage] = useState<Message | null>(
     null
   );
+  const [isRecording, setIsRecording] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const emojiPickerRef = useRef<HTMLDivElement>(null);
   const syncIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const hasScrolledToBottomOnLoadRef = useRef(false);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
 
   const getUserName = (userId: string) => {
     const user = allUsers.find((u) => u._id === userId);
@@ -225,16 +232,20 @@ export function ChatWindow({
   }, [hasMore, loadingOlder, messages.length]);
 
   // Merge server messages with optimistic (sending) messages and sort by date
+  // In notes mode: only show text notes (exclude voice notes so only text notes appear)
   const displayMessages = (() => {
     const fromServer = chatMode
       ? messages
       : messages.filter((msg) => msg.senderUserId === currentUserId);
     const merged = [...fromServer, ...optimisticMessages];
-    merged.sort(
+    const filtered = chatMode
+      ? merged
+      : merged.filter((msg) => !msg.audioBase64); // notes mode: only text (and image) notes, no voice
+    filtered.sort(
       (a, b) =>
         new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
     );
-    return merged;
+    return filtered;
   })();
 
   const handleSendMessage = async () => {
@@ -401,6 +412,116 @@ export function ChatWindow({
     } finally {
       setLoading(false);
       e.target.value = "";
+    }
+  };
+
+  const handleVoiceNoteToggle = async () => {
+    if (isRecording) {
+      // Stop and send
+      if (
+        mediaRecorderRef.current &&
+        mediaRecorderRef.current.state !== "inactive"
+      ) {
+        mediaRecorderRef.current.stop();
+      }
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mimeType = MediaRecorder.isTypeSupported("audio/webm")
+        ? "audio/webm"
+        : "audio/mp4";
+      const recorder = new MediaRecorder(stream);
+      audioChunksRef.current = [];
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) audioChunksRef.current.push(e.data);
+      };
+      recorder.onstop = async () => {
+        setIsRecording(false);
+        stream.getTracks().forEach((t) => t.stop());
+        const blob = new Blob(audioChunksRef.current, { type: mimeType });
+        const reader = new FileReader();
+        reader.readAsDataURL(blob);
+        reader.onloadend = async () => {
+          const base64 = (reader.result as string)?.split(",")[1];
+          if (!base64) {
+            toast.error("Failed to encode voice note");
+            return;
+          }
+          setLoading(true);
+          const replyToMessageId = replyingToMessage?._id ?? undefined;
+          const tempId = `temp-voice-${Date.now()}`;
+          const audioMime = MediaRecorder.isTypeSupported("audio/webm")
+            ? "audio/webm"
+            : "audio/mp4";
+          const optimisticMessage: Message = {
+            _id: tempId,
+            senderUserId: currentUserId,
+            audioBase64: base64,
+            audioMimeType: audioMime,
+            createdAt: new Date(),
+            status: "sending",
+            ...(replyToMessageId &&
+              replyingToMessage && {
+                replyToMessageId,
+                replyToText:
+                  replyingToMessage.text?.slice(0, 100) ??
+                  (replyingToMessage.imageBase64
+                    ? "Photo"
+                    : replyingToMessage.audioBase64
+                    ? "Voice note"
+                    : null),
+                replyToSenderUserId: replyingToMessage.senderUserId,
+              }),
+          };
+          setOptimisticMessages((prev) => [...prev, optimisticMessage]);
+          setReplyingToMessage(null);
+          setTimeout(() => {
+            messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+          }, 50);
+          try {
+            const response = await fetch("/api/messages", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                senderUserId: currentUserId,
+                audioBase64: base64,
+                audioMimeType: audioMime,
+                ...(replyToMessageId && { replyToMessageId }),
+              }),
+            });
+            const data = await response.json();
+            if (response.ok && data._id) {
+              setMessages((prev) => [...prev, { ...data, status: "sent" }]);
+              setOptimisticMessages((prev) =>
+                prev.filter((m) => m._id !== tempId)
+              );
+              setTimeout(() => {
+                messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+              }, 50);
+            } else {
+              setOptimisticMessages((prev) =>
+                prev.filter((m) => m._id !== tempId)
+              );
+              toast.error("Failed to send voice note");
+            }
+          } catch (err) {
+            console.error("Error sending voice note:", err);
+            setOptimisticMessages((prev) =>
+              prev.filter((m) => m._id !== tempId)
+            );
+            toast.error("Failed to send voice note");
+          } finally {
+            setLoading(false);
+          }
+        };
+      };
+      mediaRecorderRef.current = recorder;
+      recorder.start();
+      setIsRecording(true);
+    } catch (err) {
+      console.error("Error starting recording:", err);
+      toast.error("Microphone access needed for voice notes");
     }
   };
 
@@ -1065,6 +1186,8 @@ export function ChatWindow({
                   ? replyingToMessage.text.slice(0, 50)
                   : replyingToMessage.imageBase64
                   ? "Photo"
+                  : replyingToMessage.audioBase64
+                  ? "Voice note"
                   : ""}
                 {(replyingToMessage.text?.length ?? 0) > 50 ? "…" : ""}
               </span>
@@ -1120,6 +1243,27 @@ export function ChatWindow({
               </TooltipTrigger>
               <TooltipContent>
                 <p>Add emoji</p>
+              </TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  variant={isRecording ? "destructive" : "outline"}
+                  size="icon"
+                  disabled={loading}
+                  onClick={handleVoiceNoteToggle}
+                  className="shrink-0"
+                >
+                  {isRecording ? (
+                    <Square className="h-4 w-4 fill-current" />
+                  ) : (
+                    <Mic className="h-4 w-4" />
+                  )}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>{isRecording ? "Stop and send" : "Voice note"}</p>
               </TooltipContent>
             </Tooltip>
             <textarea

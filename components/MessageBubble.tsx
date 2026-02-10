@@ -36,6 +36,8 @@ interface MessageBubbleProps {
     senderUserId: string;
     text?: string | null;
     imageBase64?: string | null;
+    audioBase64?: string | null;
+    audioMimeType?: string | null;
     createdAt: string | Date;
     seenAt?: string | Date;
     reactions?: Reaction[];
@@ -456,6 +458,21 @@ export function MessageBubble({
                     View Image
                   </span>
                 </Button>
+              </div>
+            )}
+            {message.audioBase64 && (
+              <div className="mb-2">
+                <audio
+                  controls
+                  className="w-full max-w-[280px] h-9"
+                  src={`data:${message.audioMimeType || "audio/webm"};base64,${
+                    message.audioBase64
+                  }`}
+                  preload="metadata"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  Your browser does not support audio playback.
+                </audio>
               </div>
             )}
             <div className="flex items-end justify-between gap-2 min-w-0">

@@ -76,7 +76,7 @@ export async function GET(request: NextRequest) {
 // POST - Create a new message (optionally as reply to another message)
 export async function POST(request: NextRequest) {
   try {
-    const { senderUserId, text, imageBase64, replyToMessageId } =
+    const { senderUserId, text, imageBase64, audioBase64, audioMimeType, replyToMessageId } =
       await request.json();
 
     if (!senderUserId) {
@@ -86,9 +86,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!text && !imageBase64) {
+    if (!text && !imageBase64 && !audioBase64) {
       return NextResponse.json(
-        { error: "Either text or imageBase64 is required" },
+        { error: "Either text, imageBase64, or audioBase64 is required" },
         { status: 400 }
       );
     }
@@ -98,6 +98,8 @@ export async function POST(request: NextRequest) {
       senderUserId,
       text: text || null,
       imageBase64: imageBase64 || null,
+      audioBase64: audioBase64 || null,
+      audioMimeType: audioMimeType || "audio/webm",
       createdAt: new Date(),
     };
 
@@ -114,7 +116,9 @@ export async function POST(request: NextRequest) {
             ? String(replyToMsg.text).slice(0, 100)
             : replyToMsg.imageBase64
               ? "Photo"
-              : "";
+              : replyToMsg.audioBase64
+                ? "Voice note"
+                : "";
           message.replyToText = snippet;
         }
       }
