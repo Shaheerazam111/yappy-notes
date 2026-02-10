@@ -24,6 +24,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { VoiceNotePlayer } from "./VoiceNotePlayer";
 
 interface Reaction {
   userId: string;
@@ -462,17 +463,12 @@ export function MessageBubble({
             )}
             {message.audioBase64 && (
               <div className="mb-2">
-                <audio
-                  controls
-                  className="w-full max-w-[280px] h-9"
+                <VoiceNotePlayer
                   src={`data:${message.audioMimeType || "audio/webm"};base64,${
                     message.audioBase64
                   }`}
-                  preload="metadata"
                   onClick={(e) => e.stopPropagation()}
-                >
-                  Your browser does not support audio playback.
-                </audio>
+                />
               </div>
             )}
             <div className="flex items-end justify-between gap-2 min-w-0">
