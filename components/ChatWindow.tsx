@@ -18,6 +18,7 @@ import {
   Reply,
   Mic,
   Square,
+  Bell,
 } from "lucide-react";
 import EmojiPicker, { EmojiClickData, Theme } from "emoji-picker-react";
 import { UpdatePasscodeDialog } from "./UpdatePasscodeDialog";
@@ -92,6 +93,21 @@ export function ChatWindow({
       ? localStorage.getItem("chatSkipSessionRecheck") === "true"
       : false
   );
+  const [allowBackgroundNotifications, setAllowBackgroundNotifications] =
+    useState(
+      () =>
+        typeof window !== "undefined" &&
+        localStorage.getItem("chatAllowBackgroundNotifications") === "true"
+    );
+  const [notifyUserIds, setNotifyUserIds] = useState<string[]>(() => {
+    if (typeof window === "undefined") return [];
+    try {
+      const raw = localStorage.getItem("chatNotifyUserIds");
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
+  });
   const [assigningAdmin, setAssigningAdmin] = useState(false);
   const [deletingUserId, setDeletingUserId] = useState<string | null>(null);
   const [chatMode, setChatMode] = useState(false); // Hidden chat mode, unlocked by passcode
@@ -109,6 +125,8 @@ export function ChatWindow({
   const hasScrolledToBottomOnLoadRef = useRef(false);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
+  const lastMessageIdsRef = useRef<Set<string>>(new Set());
+  const hasInitialMessagesRef = useRef(false);
 
   const getUserName = (userId: string) => {
     const user = allUsers.find((u) => u._id === userId);
@@ -730,6 +748,51 @@ export function ChatWindow({
     }
   }, [showEmojiPicker]);
 
+  // Background notifications: when messages update, show notification for new messages from notifyUserIds when tab is hidden
+  useEffect(() => {
+    const ids = new Set(messages.map((m) => m._id));
+    if (!hasInitialMessagesRef.current) {
+      hasInitialMessagesRef.current = messages.length > 0;
+      lastMessageIdsRef.current = ids;
+      return;
+    }
+    const allowed =
+      allowBackgroundNotifications &&
+      notifyUserIds.length > 0 &&
+      typeof Notification !== "undefined" &&
+      Notification.permission === "granted" &&
+      document.visibilityState === "hidden";
+    if (allowed) {
+      const prev = lastMessageIdsRef.current;
+      for (const m of messages) {
+        if (prev.has(m._id)) continue;
+        if (m.senderUserId === currentUserId) continue;
+        if (!notifyUserIds.includes(m.senderUserId)) continue;
+        const senderName = getUserName(m.senderUserId);
+        const body = m.text
+          ? m.text.slice(0, 80) + (m.text.length > 80 ? "…" : "")
+          : m.audioBase64
+          ? "Voice note"
+          : m.imageBase64
+          ? "Photo"
+          : "New message";
+        try {
+          new Notification("Yappy Notes", {
+            body: `${senderName}: ${body}`,
+            icon: "/icon-192.png",
+          });
+        } catch (_) {}
+      }
+    }
+    lastMessageIdsRef.current = ids;
+  }, [
+    messages,
+    allowBackgroundNotifications,
+    notifyUserIds,
+    currentUserId,
+    allUsers,
+  ]);
+
   // Auto-sync interval
   useEffect(() => {
     if (syncEnabled) {
@@ -773,6 +836,41 @@ export function ChatWindow({
         ? "You won’t be asked for passcode when switching tabs or windows."
         : "Passcode will be required when switching tabs or windows."
     );
+  };
+
+  const handleToggleAllowBackgroundNotifications = async () => {
+    if (allowBackgroundNotifications) {
+      setAllowBackgroundNotifications(false);
+      localStorage.setItem("chatAllowBackgroundNotifications", "false");
+      toast.info("Background notifications disabled");
+      return;
+    }
+    if (typeof Notification === "undefined") {
+      toast.error("Notifications not supported");
+      return;
+    }
+    const permission = await Notification.requestPermission();
+    if (permission === "granted") {
+      setAllowBackgroundNotifications(true);
+      localStorage.setItem("chatAllowBackgroundNotifications", "true");
+      toast.success(
+        "Background notifications enabled. Choose who to notify for below."
+      );
+    } else {
+      toast.error(
+        "Permission denied. Enable notifications in browser settings."
+      );
+    }
+  };
+
+  const handleToggleNotifyUser = (userId: string) => {
+    setNotifyUserIds((prev) => {
+      const next = prev.includes(userId)
+        ? prev.filter((id) => id !== userId)
+        : [...prev, userId];
+      localStorage.setItem("chatNotifyUserIds", JSON.stringify(next));
+      return next;
+    });
   };
 
   const openSettings = () => {
@@ -1012,6 +1110,82 @@ export function ChatWindow({
                   }`}
                 />
               </button>
+            </div>
+
+            <div className="rounded-lg border border-border p-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <Bell className="h-4 w-4 text-muted-foreground" />
+                <h4 className="text-sm font-medium">Notifications</h4>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Get notified when the app is in the background. Enable below,
+                then choose which users to notify for. Turn on auto-sync from
+                the menu so messages are checked in the background.
+              </p>
+              <div className="flex items-center justify-between gap-4">
+                <Label
+                  htmlFor="allow-background-notifications"
+                  className="cursor-pointer flex-1 text-sm font-normal"
+                >
+                  Allow background notifications
+                </Label>
+                <button
+                  id="allow-background-notifications"
+                  type="button"
+                  role="switch"
+                  aria-checked={allowBackgroundNotifications}
+                  onClick={handleToggleAllowBackgroundNotifications}
+                  className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
+                    allowBackgroundNotifications ? "bg-primary" : "bg-muted"
+                  }`}
+                >
+                  <span
+                    className={`pointer-events-none block h-5 w-5 rounded-full bg-background shadow ring-0 transition-transform ${
+                      allowBackgroundNotifications
+                        ? "translate-x-5"
+                        : "translate-x-0.5"
+                    }`}
+                  />
+                </button>
+              </div>
+              {allowBackgroundNotifications && (
+                <div className="pt-2 space-y-2">
+                  <p className="text-xs text-muted-foreground">
+                    Notify me when these users send a message (off by default):
+                  </p>
+                  <div className="flex flex-col gap-1.5">
+                    {allUsers
+                      .filter((u) => u._id !== currentUserId)
+                      .map((u) => (
+                        <div
+                          key={u._id}
+                          className="flex items-center justify-between gap-2 rounded-md border border-border px-3 py-2"
+                        >
+                          <span className="text-sm">{u.name}</span>
+                          <button
+                            type="button"
+                            role="switch"
+                            aria-checked={notifyUserIds.includes(u._id)}
+                            onClick={() => handleToggleNotifyUser(u._id)}
+                            className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
+                              notifyUserIds.includes(u._id)
+                                ? "bg-primary"
+                                : "bg-muted"
+                            }`}
+                          >
+                            <span
+                              className={`pointer-events-none block h-4 w-4 rounded-full bg-background shadow ring-0 transition-transform ${
+                                notifyUserIds.includes(u._id)
+                                  ? "translate-x-4"
+                                  : "translate-x-0.5"
+                              }`}
+                            />
+                          </button>
+                        </div>
+                      ))}
+                  </div>
+                </div>
+              )}
             </div>
 
             {isAdmin && (
