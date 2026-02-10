@@ -471,7 +471,8 @@ export function MessageBubble({
                 />
               </div>
             )}
-            <div className="flex items-end justify-between gap-2 min-w-0">
+            {/* On mobile: time below text. On md+: time inline bottom-right. */}
+            <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-1 md:gap-2 min-w-0">
               <div className="flex-1 min-w-0 overflow-hidden">
                 {message.text && (
                   <p className="wrap-anywhere whitespace-pre-wrap">
@@ -499,7 +500,7 @@ export function MessageBubble({
                   </div>
                 )}
               </div>
-              {/* Time inline at bottom right of message */}
+              {/* Time: below text on mobile, inline right on desktop */}
               <div className="flex items-center gap-1 shrink-0 self-end">
                 {message.status === "sending" && (
                   <Loader2 className="h-3 w-3 animate-spin text-muted-foreground/70" />
