@@ -49,3 +49,35 @@ export async function sendPushForNewMessage(
     )
   );
 }
+
+/**
+ * Send push to subscribers who have "notify for this user" when that user opens the app (enters passcode).
+ */
+export async function sendPushForAppOpened(
+  userId: string,
+  userName: string
+): Promise<void> {
+  if (!isPushConfigured()) return;
+
+  const db = await getDb();
+  const subs = await db
+    .collection("push_subscriptions")
+    .find({
+      notifyUserIds: userId,
+      "subscription.endpoint": { $exists: true },
+    })
+    .toArray();
+
+  const payload = JSON.stringify({
+    title: "Yappy Notes",
+    body: `${userName} opened the app`,
+    icon: "/icon-192.png",
+  });
+
+  type SubDoc = { subscription?: webpush.PushSubscription };
+  await Promise.allSettled(
+    (subs as SubDoc[]).map((doc) =>
+      doc.subscription ? webpush.sendNotification(doc.subscription, payload) : Promise.resolve()
+    )
+  );
+}

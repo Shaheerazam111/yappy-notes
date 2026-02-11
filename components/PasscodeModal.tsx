@@ -71,6 +71,13 @@ export function PasscodeModal({
         } else {
           onPasscodeCorrect();
           setPasscode("");
+          if (storedUserId) {
+            fetch("/api/push/notify-opened", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ userId: storedUserId }),
+            }).catch(() => {});
+          }
         }
       } else {
         setError(data.error || "Incorrect passcode");
