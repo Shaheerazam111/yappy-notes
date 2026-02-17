@@ -815,10 +815,9 @@ export function ChatWindow({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allowBackgroundNotifications, currentUserId]);
 
-  // Auto-sync interval
+  // Poll for new messages when in chat mode (so you see messages without refreshing) or when auto-sync is on
   useEffect(() => {
-    if (syncEnabled) {
-      // Set up interval to fetch messages every 5 seconds
+    if (syncEnabled || chatMode) {
       syncIntervalRef.current = setInterval(() => {
         fetchMessages();
       }, 5000); // 5 seconds
@@ -830,14 +829,13 @@ export function ChatWindow({
         }
       };
     } else {
-      // Clear interval when sync is disabled
       if (syncIntervalRef.current) {
         clearInterval(syncIntervalRef.current);
         syncIntervalRef.current = null;
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [syncEnabled]);
+  }, [syncEnabled, chatMode]);
 
   const handleToggleSync = () => {
     setSyncEnabled(!syncEnabled);
