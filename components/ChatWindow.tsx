@@ -215,21 +215,7 @@ export function ChatWindow({
     fetchMessages();
   }, []);
 
-  useEffect(() => {
-    // Only auto-scroll if we're near the bottom (within 100px)
-    if (messagesContainerRef.current) {
-      const container = messagesContainerRef.current;
-      const isNearBottom =
-        container.scrollHeight - container.scrollTop - container.clientHeight <
-        100;
-
-      if (isNearBottom) {
-        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-      }
-    }
-  }, [messages]);
-
-  // Auto-scroll to bottom only on first load (not when loading older messages at top)
+  // Auto-scroll to bottom only once on first load (never on load more, send, or poll)
   useEffect(() => {
     if (
       !initialLoading &&
@@ -242,6 +228,16 @@ export function ChatWindow({
       }, 0);
     }
   }, [initialLoading, messages.length]);
+
+  const prevChatModeRef = useRef(chatMode);
+  useEffect(() => {
+    if (prevChatModeRef.current !== chatMode) {
+      prevChatModeRef.current = chatMode;
+      setTimeout(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+      }, 100);
+    }
+  }, [chatMode]);
 
   // Infinite scroll - load older messages when scrolling to top
   useEffect(() => {
@@ -340,10 +336,6 @@ export function ChatWindow({
     setReplyingToMessage(null);
     setLoading(true);
 
-    setTimeout(() => {
-      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-    }, 50);
-
     try {
       const response = await fetch("/api/messages", {
         method: "POST",
@@ -361,9 +353,6 @@ export function ChatWindow({
         // Replace optimistic with real message from server
         setMessages((prev) => [...prev, { ...data, status: "sent" }]);
         setOptimisticMessages((prev) => prev.filter((m) => m._id !== tempId));
-        setTimeout(() => {
-          messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-        }, 50);
         fetchMessages();
       } else {
         setOptimisticMessages((prev) => prev.filter((m) => m._id !== tempId));
@@ -411,9 +400,6 @@ export function ChatWindow({
       };
       setOptimisticMessages((prev) => [...prev, optimisticMessage]);
       setReplyingToMessage(null);
-      setTimeout(() => {
-        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-      }, 50);
 
       const response = await fetch("/api/messages", {
         method: "POST",
@@ -430,9 +416,6 @@ export function ChatWindow({
       if (response.ok && data._id) {
         setMessages((prev) => [...prev, { ...data, status: "sent" }]);
         setOptimisticMessages((prev) => prev.filter((m) => m._id !== tempId));
-        setTimeout(() => {
-          messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-        }, 50);
         fetchMessages();
       } else {
         setOptimisticMessages((prev) => prev.filter((m) => m._id !== tempId));
@@ -511,9 +494,6 @@ export function ChatWindow({
           };
           setOptimisticMessages((prev) => [...prev, optimisticMessage]);
           setReplyingToMessage(null);
-          setTimeout(() => {
-            messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-          }, 50);
           try {
             const response = await fetch("/api/messages", {
               method: "POST",
@@ -531,9 +511,6 @@ export function ChatWindow({
               setOptimisticMessages((prev) =>
                 prev.filter((m) => m._id !== tempId)
               );
-              setTimeout(() => {
-                messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-              }, 50);
               fetchMessages();
             } else {
               setOptimisticMessages((prev) =>
@@ -729,11 +706,6 @@ export function ChatWindow({
       setChatMode(false);
       await fetchMessages(); // Refresh to show only notes
     }
-
-    // Scroll to bottom after mode toggle and messages are loaded
-    setTimeout(() => {
-      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-    }, 100);
   };
 
   const handleEmojiClick = (emojiData: EmojiClickData) => {
