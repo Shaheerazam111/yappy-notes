@@ -159,15 +159,21 @@ export function ChatWindow({
       const response = await fetch(url);
       if (response.ok) {
         const data = await response.json();
-        if (append && data.messages) {
-          // Prepend older messages
-          setMessages((prev) => [...data.messages, ...prev]);
-        } else if (data.messages) {
-          // Replace with new messages
-          setMessages(data.messages);
+        const newList = data.messages ?? data;
+        if (append && newList.length) {
+          setMessages((prev) => [...newList, ...prev]);
+        } else if (newList.length) {
+          setMessages((prev) => {
+            if (prev.length === 0) return newList;
+            const apiOldestTime = new Date(newList[0].createdAt).getTime();
+            const keptOlder = prev.filter(
+              (m) => new Date(m.createdAt).getTime() < apiOldestTime
+            );
+            if (keptOlder.length === 0) return newList;
+            return [...keptOlder, ...newList];
+          });
         } else {
-          // Fallback for old API format
-          setMessages(data);
+          setMessages([]);
         }
         setHasMore(data.hasMore !== false);
       }
@@ -358,6 +364,7 @@ export function ChatWindow({
         setTimeout(() => {
           messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
         }, 50);
+        fetchMessages();
       } else {
         setOptimisticMessages((prev) => prev.filter((m) => m._id !== tempId));
         toast.error("Failed to send message");
@@ -426,6 +433,7 @@ export function ChatWindow({
         setTimeout(() => {
           messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
         }, 50);
+        fetchMessages();
       } else {
         setOptimisticMessages((prev) => prev.filter((m) => m._id !== tempId));
         toast.error("Failed to upload image");
@@ -526,6 +534,7 @@ export function ChatWindow({
               setTimeout(() => {
                 messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
               }, 50);
+              fetchMessages();
             } else {
               setOptimisticMessages((prev) =>
                 prev.filter((m) => m._id !== tempId)
