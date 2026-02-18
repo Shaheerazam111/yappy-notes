@@ -154,8 +154,8 @@ export function ChatWindow({
 
     try {
       const url = beforeId
-        ? `/api/messages?limit=50&before=${beforeId}&userId=${currentUserId}`
-        : `/api/messages?limit=50&userId=${currentUserId}`;
+        ? `/api/messages?limit=150&before=${beforeId}&userId=${currentUserId}`
+        : `/api/messages?limit=150&userId=${currentUserId}`;
       const response = await fetch(url);
       if (response.ok) {
         const data = await response.json();
