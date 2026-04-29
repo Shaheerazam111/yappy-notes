@@ -136,6 +136,7 @@ export function ChatWindow({
   const audioChunksRef = useRef<Blob[]>([]);
   const lastMessageIdsRef = useRef<Set<string>>(new Set());
   const hasInitialMessagesRef = useRef(false);
+  const lastFetchedAtRef = useRef<string | null>(null);
 
   const getUserName = (userId: string) => {
     const user = allUsers.find((u) => u._id === userId);
@@ -154,8 +155,8 @@ export function ChatWindow({
 
     try {
       const url = beforeId
-        ? `/api/messages?limit=150&before=${beforeId}&userId=${currentUserId}`
-        : `/api/messages?limit=150&userId=${currentUserId}`;
+        ? `/api/messages?limit=50&before=${beforeId}&userId=${currentUserId}`
+        : `/api/messages?limit=50&userId=${currentUserId}`;
       const response = await fetch(url);
       if (response.ok) {
         const data = await response.json();
@@ -183,6 +184,24 @@ export function ChatWindow({
       setRefreshing(false);
       setLoadingOlder(false);
       setInitialLoading(false);
+    }
+  };
+
+  const pollMessages = async () => {
+    if (!lastFetchedAtRef.current) {
+      return fetchMessages();
+    }
+    try {
+      const url = `/api/messages?after=${encodeURIComponent(lastFetchedAtRef.current)}&userId=${currentUserId}`;
+      const res = await fetch(url);
+      if (!res.ok) return;
+      const data = await res.json();
+      const newMsgs: Message[] = data.messages ?? [];
+      if (newMsgs.length > 0) {
+        setMessages((prev) => [...prev, ...newMsgs]);
+      }
+    } catch (error) {
+      console.error("Error polling messages:", error);
     }
   };
 
@@ -214,6 +233,14 @@ export function ChatWindow({
   useEffect(() => {
     fetchMessages();
   }, []);
+
+  // Keep lastFetchedAtRef pointing at the newest message's createdAt for poll requests
+  useEffect(() => {
+    const newest = messages[messages.length - 1];
+    if (newest) {
+      lastFetchedAtRef.current = new Date(newest.createdAt).toISOString();
+    }
+  }, [messages]);
 
   // Auto-scroll to bottom only once on first load (never on load more, send, or poll)
   useEffect(() => {
@@ -800,7 +827,7 @@ export function ChatWindow({
   useEffect(() => {
     if (syncEnabled || chatMode) {
       syncIntervalRef.current = setInterval(() => {
-        fetchMessages();
+        pollMessages();
       }, 5000); // 5 seconds
 
       return () => {

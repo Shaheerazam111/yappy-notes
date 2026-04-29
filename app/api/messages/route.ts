@@ -8,6 +8,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const limit = parseInt(searchParams.get("limit") || "50");
     const before = searchParams.get("before");
+    const after = searchParams.get("after");
     const userId = searchParams.get("userId");
 
     const db = await getDb();
@@ -25,6 +26,32 @@ export async function GET(request: NextRequest) {
         { deletedFor: { $exists: false } },
         { deletedFor: { $nin: [userId] } },
       ];
+    }
+
+    if (after) {
+      const afterDate = new Date(after);
+      if (!isNaN(afterDate.getTime())) {
+        query.createdAt = { ...(query.createdAt ?? {}), $gt: afterDate };
+      }
+
+      // For poll requests, return only new messages (up to 50), oldest first
+      const pollMessages = await db
+        .collection("messages")
+        .find(query)
+        .sort({ createdAt: 1 })
+        .limit(50)
+        .toArray();
+
+      if (isAdmin && userId) {
+        pollMessages.forEach((msg: any) => {
+          msg.isDeleted = msg.deletedFor && msg.deletedFor.length > 0;
+        });
+      }
+
+      return NextResponse.json({
+        messages: pollMessages,
+        hasMore: false,
+      });
     }
 
     if (before && ObjectId.isValid(before)) {
