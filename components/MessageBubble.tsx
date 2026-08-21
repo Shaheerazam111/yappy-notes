@@ -10,6 +10,7 @@ import {
   CheckCircle,
   Eye,
   Reply,
+  WifiOff,
 } from "lucide-react";
 import {
   Tooltip,
@@ -44,7 +45,7 @@ interface MessageBubbleProps {
     reactions?: Reaction[];
     isDeleted?: boolean; // Flag to indicate if message is deleted (admin sees these)
     deletedFor?: string[]; // Array of user IDs who deleted this message
-    status?: "sending" | "sent" | "failed";
+    status?: "sending" | "sent" | "failed" | "queued";
     replyToMessageId?: string;
     replyToText?: string | null;
     replyToSenderUserId?: string;
@@ -505,14 +506,20 @@ export const MessageBubble = memo(function MessageBubble({
                 {message.status === "sending" && (
                   <Loader2 className="h-3 w-3 animate-spin text-muted-foreground/70" />
                 )}
+                {message.status === "queued" && (
+                  <WifiOff className="h-3 w-3 text-muted-foreground/70" />
+                )}
                 <span className="text-[10px] text-muted-foreground/70 leading-none whitespace-nowrap">
                   {message.status === "sending"
                     ? "Sending..."
+                    : message.status === "queued"
+                    ? "Waiting for connection..."
                     : formatTime(message.createdAt)}
                 </span>
                 {showSeenDelivered &&
                   isCurrentUser &&
-                  message.status !== "sending" && (
+                  message.status !== "sending" &&
+                  message.status !== "queued" && (
                     <span className="text-[10px] text-muted-foreground/70">
                       {message.seenAt ? (
                         <CheckCircle className="h-3 w-3" />

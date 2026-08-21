@@ -13,6 +13,13 @@ function urlBase64ToUint8Array(base64: string): Uint8Array {
 import { Button } from "@/components/ui/button";
 import { MessageBubble } from "./MessageBubble";
 import { compressImageToBase64 } from "@/lib/compressImage";
+import { fetchWithTimeout } from "@/lib/utils";
+import {
+  enqueueMessage,
+  getQueuedMessages,
+  claimNextQueuedMessage,
+  type QueuedMessage,
+} from "@/lib/outbox";
 import {
   RefreshCw,
   Image as ImageIcon,
@@ -62,7 +69,7 @@ interface Message {
   audioMimeType?: string | null;
   createdAt: string | Date;
   reactions?: Reaction[];
-  status?: "sending" | "sent" | "failed";
+  status?: "sending" | "sent" | "failed" | "queued";
   replyToMessageId?: string;
   replyToText?: string | null;
   replyToSenderUserId?: string;
@@ -233,6 +240,227 @@ export function ChatWindow({
       isPollingRef.current = false;
     }
   };
+
+  // --- Offline outbox -----------------------------------------------------
+  // Messages that fail to send because of a network problem (not because the
+  // server rejected them) are persisted to IndexedDB and shown in the UI with
+  // status "queued". They're retried automatically once we're back online -
+  // on reconnect, on a periodic timer, and (where the browser supports it)
+  // via the service worker's Background Sync even if the app has been closed.
+
+  const requestBackgroundSync = () => {
+    if (typeof navigator === "undefined" || !("serviceWorker" in navigator))
+      return;
+    navigator.serviceWorker.ready
+      .then((reg) => {
+        const syncManager = (
+          reg as ServiceWorkerRegistration & {
+            sync?: { register: (tag: string) => Promise<void> };
+          }
+        ).sync;
+        return syncManager?.register("flush-outbox");
+      })
+      .catch(() => {
+        // Background Sync isn't supported (e.g. iOS Safari) - the periodic
+        // retry / online listener below still cover us whenever the app is open.
+      });
+  };
+
+  const queueMessage = useCallback(
+    async (
+      tempId: string,
+      payload: Omit<QueuedMessage, "localId" | "createdAt">
+    ) => {
+      try {
+        await enqueueMessage({
+          localId: tempId,
+          createdAt: new Date().toISOString(),
+          ...payload,
+        });
+      } catch (e) {
+        console.error("Failed to persist queued message:", e);
+      }
+      setOptimisticMessages((prev) =>
+        prev.map((m) => (m._id === tempId ? { ...m, status: "queued" } : m))
+      );
+      requestBackgroundSync();
+    },
+    []
+  );
+
+  const sendOrQueue = useCallback(
+    async (
+      tempId: string,
+      payload: Omit<QueuedMessage, "localId" | "createdAt">
+    ) => {
+      // Skip straight to queueing if we already know we're offline - no point
+      // waiting out a fetch that can't possibly succeed.
+      if (typeof navigator !== "undefined" && navigator.onLine === false) {
+        await queueMessage(tempId, payload);
+        return;
+      }
+      try {
+        const response = await fetchWithTimeout("/api/messages", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const data = await response.json().catch(() => null);
+        if (response.ok && data?._id) {
+          setMessages((prev) =>
+            prev.some((m) => m._id === data._id)
+              ? prev
+              : [...prev, { ...data, status: "sent" }]
+          );
+          setOptimisticMessages((prev) => prev.filter((m) => m._id !== tempId));
+          fetchMessages();
+        } else {
+          // Server explicitly rejected it (validation error, etc.) - not a
+          // connectivity issue, so don't queue it; surface the failure instead.
+          setOptimisticMessages((prev) => prev.filter((m) => m._id !== tempId));
+          toast.error(data?.error || "Failed to send message");
+        }
+      } catch (err) {
+        console.error("Send failed, queueing for retry:", err);
+        await queueMessage(tempId, payload);
+      }
+    },
+    [fetchMessages, queueMessage]
+  );
+
+  const isFlushingOutboxRef = useRef(false);
+
+  const flushOutbox = useCallback(async () => {
+    if (isFlushingOutboxRef.current) return;
+    if (typeof navigator !== "undefined" && navigator.onLine === false) return;
+    isFlushingOutboxRef.current = true;
+    try {
+      while (true) {
+        const item = await claimNextQueuedMessage();
+        if (!item) break;
+        const localId = item.localId;
+        const payload = {
+          senderUserId: item.senderUserId,
+          text: item.text,
+          imageBase64: item.imageBase64,
+          audioBase64: item.audioBase64,
+          audioMimeType: item.audioMimeType,
+          replyToMessageId: item.replyToMessageId,
+        };
+        try {
+          const response = await fetchWithTimeout("/api/messages", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+          const data = await response.json().catch(() => null);
+          if (response.ok && data?._id) {
+            setMessages((prev) =>
+              prev.some((m) => m._id === data._id)
+                ? prev
+                : [...prev, { ...data, status: "sent" }]
+            );
+            setOptimisticMessages((prev) =>
+              prev.filter((m) => m._id !== localId)
+            );
+          } else {
+            // Dropped: the server rejected it outright, so retrying wouldn't help.
+            setOptimisticMessages((prev) =>
+              prev.filter((m) => m._id !== localId)
+            );
+            toast.error(
+              data?.error || "A queued message couldn't be sent and was dropped"
+            );
+          }
+        } catch {
+          // Still offline (or timed out) - put it back for the next attempt and stop.
+          await enqueueMessage(item);
+          break;
+        }
+      }
+    } finally {
+      isFlushingOutboxRef.current = false;
+    }
+  }, []);
+
+  // Restore any messages queued before the app was last closed, and try to send them.
+  useEffect(() => {
+    (async () => {
+      try {
+        const queued = await getQueuedMessages();
+        if (queued.length > 0) {
+          setOptimisticMessages((prev) => {
+            const existingIds = new Set(prev.map((m) => m._id));
+            const restored: Message[] = queued
+              .filter((q) => !existingIds.has(q.localId))
+              .map((q) => ({
+                _id: q.localId,
+                senderUserId: q.senderUserId,
+                text: q.text,
+                imageBase64: q.imageBase64,
+                audioBase64: q.audioBase64,
+                audioMimeType: q.audioMimeType,
+                createdAt: q.createdAt,
+                status: "queued",
+                replyToMessageId: q.replyToMessageId,
+              }));
+            return restored.length ? [...prev, ...restored] : prev;
+          });
+        }
+      } catch (e) {
+        console.error("Failed to restore queued messages:", e);
+      }
+      flushOutbox();
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Retry immediately when the browser reports we're back online.
+  useEffect(() => {
+    const handleOnline = () => flushOutbox();
+    window.addEventListener("online", handleOnline);
+    return () => window.removeEventListener("online", handleOnline);
+  }, [flushOutbox]);
+
+  // Fallback periodic retry: `online`/`offline` events aren't always reliable
+  // (e.g. connected to wifi with no real internet), so also check periodically.
+  // Self-scheduling like pollMessages, so a slow/hanging attempt can't stack up.
+  useEffect(() => {
+    let cancelled = false;
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    const tick = async () => {
+      if (cancelled) return;
+      await flushOutbox();
+      if (!cancelled) timeoutId = setTimeout(tick, 20000);
+    };
+    timeoutId = setTimeout(tick, 20000);
+    return () => {
+      cancelled = true;
+      if (timeoutId) clearTimeout(timeoutId);
+    };
+  }, [flushOutbox]);
+
+  // When the service worker flushes the outbox in the background (app closed,
+  // via Background Sync), sync our in-memory UI state to match once we're reopened.
+  useEffect(() => {
+    if (typeof navigator === "undefined" || !("serviceWorker" in navigator))
+      return;
+    const handleMessage = (event: MessageEvent) => {
+      if (event.data?.type !== "outbox-flushed") return;
+      getQueuedMessages().then((queued) => {
+        const stillQueuedIds = new Set(queued.map((q) => q.localId));
+        setOptimisticMessages((prev) =>
+          prev.filter(
+            (m) => m.status !== "queued" || stillQueuedIds.has(String(m._id))
+          )
+        );
+      });
+      fetchMessages();
+    };
+    navigator.serviceWorker.addEventListener("message", handleMessage);
+    return () =>
+      navigator.serviceWorker.removeEventListener("message", handleMessage);
+  }, [fetchMessages]);
 
   const loadOlderMessages = async () => {
     if (loadingOlder || !hasMore || messages.length === 0) return;
@@ -427,31 +655,11 @@ export function ChatWindow({
     setLoading(true);
 
     try {
-      const response = await fetch("/api/messages", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          senderUserId: currentUserId,
-          text: messageText,
-          ...(replyToMessageId && { replyToMessageId }),
-        }),
+      await sendOrQueue(tempId, {
+        senderUserId: currentUserId,
+        text: messageText,
+        ...(replyToMessageId && { replyToMessageId }),
       });
-
-      const data = await response.json();
-
-      if (response.ok && data._id) {
-        // Replace optimistic with real message from server
-        setMessages((prev) => [...prev, { ...data, status: "sent" }]);
-        setOptimisticMessages((prev) => prev.filter((m) => m._id !== tempId));
-        fetchMessages();
-      } else {
-        setOptimisticMessages((prev) => prev.filter((m) => m._id !== tempId));
-        toast.error("Failed to send message");
-      }
-    } catch (error) {
-      console.error("Error sending message:", error);
-      setOptimisticMessages((prev) => prev.filter((m) => m._id !== tempId));
-      toast.error("Failed to send message");
     } finally {
       setLoading(false);
     }
@@ -468,11 +676,12 @@ export function ChatWindow({
 
     setLoading(true);
 
+    let tempId: string | null = null;
     try {
       const imageBase64 = await compressImageToBase64(file);
 
       const replyToMessageId = replyingToMessage?._id ?? undefined;
-      const tempId = `temp-img-${Date.now()}`;
+      tempId = `temp-img-${Date.now()}`;
       const optimisticMessage: Message = {
         _id: tempId,
         senderUserId: currentUserId,
@@ -491,31 +700,18 @@ export function ChatWindow({
       setOptimisticMessages((prev) => [...prev, optimisticMessage]);
       setReplyingToMessage(null);
 
-      const response = await fetch("/api/messages", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          senderUserId: currentUserId,
-          imageBase64,
-          ...(replyToMessageId && { replyToMessageId }),
-        }),
+      await sendOrQueue(tempId, {
+        senderUserId: currentUserId,
+        imageBase64,
+        ...(replyToMessageId && { replyToMessageId }),
       });
-
-      const data = await response.json();
-
-      if (response.ok && data._id) {
-        setMessages((prev) => [...prev, { ...data, status: "sent" }]);
-        setOptimisticMessages((prev) => prev.filter((m) => m._id !== tempId));
-        fetchMessages();
-      } else {
-        setOptimisticMessages((prev) => prev.filter((m) => m._id !== tempId));
-        toast.error("Failed to upload image");
-      }
     } catch (error) {
+      // Only reachable for image compression failures - sendOrQueue handles its own errors.
       console.error("Error uploading image:", error);
-      setOptimisticMessages((prev) =>
-        prev.filter((m) => !String(m._id).startsWith("temp-img-"))
-      );
+      if (tempId) {
+        const id = tempId;
+        setOptimisticMessages((prev) => prev.filter((m) => m._id !== id));
+      }
       toast.error("Failed to upload image");
     } finally {
       setLoading(false);
@@ -585,35 +781,12 @@ export function ChatWindow({
           setOptimisticMessages((prev) => [...prev, optimisticMessage]);
           setReplyingToMessage(null);
           try {
-            const response = await fetch("/api/messages", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                senderUserId: currentUserId,
-                audioBase64: base64,
-                audioMimeType: audioMime,
-                ...(replyToMessageId && { replyToMessageId }),
-              }),
+            await sendOrQueue(tempId, {
+              senderUserId: currentUserId,
+              audioBase64: base64,
+              audioMimeType: audioMime,
+              ...(replyToMessageId && { replyToMessageId }),
             });
-            const data = await response.json();
-            if (response.ok && data._id) {
-              setMessages((prev) => [...prev, { ...data, status: "sent" }]);
-              setOptimisticMessages((prev) =>
-                prev.filter((m) => m._id !== tempId)
-              );
-              fetchMessages();
-            } else {
-              setOptimisticMessages((prev) =>
-                prev.filter((m) => m._id !== tempId)
-              );
-              toast.error("Failed to send voice note");
-            }
-          } catch (err) {
-            console.error("Error sending voice note:", err);
-            setOptimisticMessages((prev) =>
-              prev.filter((m) => m._id !== tempId)
-            );
-            toast.error("Failed to send voice note");
           } finally {
             setLoading(false);
           }
