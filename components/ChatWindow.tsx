@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 
 function urlBase64ToUint8Array(base64: string): Uint8Array {
   const padding = "=".repeat((4 - (base64.length % 4)) % 4);
@@ -28,6 +28,7 @@ import {
   Mic,
   Square,
   Bell,
+  ChevronDown,
 } from "lucide-react";
 import EmojiPicker, { EmojiClickData, Theme } from "emoji-picker-react";
 import { UpdatePasscodeDialog } from "./UpdatePasscodeDialog";
@@ -137,16 +138,23 @@ export function ChatWindow({
   const lastMessageIdsRef = useRef<Set<string>>(new Set());
   const hasInitialMessagesRef = useRef(false);
   const lastFetchedAtRef = useRef<string | null>(null);
+  const [isAtBottom, setIsAtBottom] = useState(true);
+  const isAtBottomRef = useRef(true);
+  const [unseenCount, setUnseenCount] = useState(0);
+  const lastSeenMessageIdRef = useRef<string | null>(null);
 
-  const getUserName = (userId: string) => {
-    const user = allUsers.find((u) => u._id === userId);
-    return user?.name || "Unknown";
-  };
+  const userNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const u of allUsers) map.set(u._id, u.name);
+    return map;
+  }, [allUsers]);
+
+  const getUserName = (userId: string) => userNameById.get(userId) || "Unknown";
 
   const isAdmin =
     allUsers.find((u) => u._id === currentUserId)?.isAdmin === true;
 
-  const fetchMessages = async (beforeId?: string, append = false) => {
+  const fetchMessages = useCallback(async (beforeId?: string, append = false) => {
     if (beforeId) {
       setLoadingOlder(true);
     } else {
@@ -162,13 +170,22 @@ export function ChatWindow({
         const data = await response.json();
         const newList = data.messages ?? data;
         if (append && newList.length) {
-          setMessages((prev) => [...newList, ...prev]);
+          setMessages((prev) => {
+            const existingIds = new Set(prev.map((m) => m._id));
+            const deduped = newList.filter(
+              (m: Message) => !existingIds.has(m._id)
+            );
+            return [...deduped, ...prev];
+          });
         } else if (newList.length) {
           setMessages((prev) => {
             if (prev.length === 0) return newList;
             const apiOldestTime = new Date(newList[0].createdAt).getTime();
+            const newIds = new Set(newList.map((m: Message) => m._id));
             const keptOlder = prev.filter(
-              (m) => new Date(m.createdAt).getTime() < apiOldestTime
+              (m) =>
+                new Date(m.createdAt).getTime() < apiOldestTime &&
+                !newIds.has(m._id)
             );
             if (keptOlder.length === 0) return newList;
             return [...keptOlder, ...newList];
@@ -185,12 +202,18 @@ export function ChatWindow({
       setLoadingOlder(false);
       setInitialLoading(false);
     }
-  };
+  }, [currentUserId]);
+
+  const isPollingRef = useRef(false);
 
   const pollMessages = async () => {
     if (!lastFetchedAtRef.current) {
       return fetchMessages();
     }
+    // Prevent overlapping poll requests from piling up on slow connections,
+    // which otherwise re-append the same "new since X" batch multiple times.
+    if (isPollingRef.current) return;
+    isPollingRef.current = true;
     try {
       const url = `/api/messages?after=${encodeURIComponent(lastFetchedAtRef.current)}&userId=${currentUserId}`;
       const res = await fetch(url);
@@ -198,10 +221,16 @@ export function ChatWindow({
       const data = await res.json();
       const newMsgs: Message[] = data.messages ?? [];
       if (newMsgs.length > 0) {
-        setMessages((prev) => [...prev, ...newMsgs]);
+        setMessages((prev) => {
+          const existingIds = new Set(prev.map((m) => m._id));
+          const deduped = newMsgs.filter((m) => !existingIds.has(m._id));
+          return deduped.length ? [...prev, ...deduped] : prev;
+        });
       }
     } catch (error) {
       console.error("Error polling messages:", error);
+    } finally {
+      isPollingRef.current = false;
     }
   };
 
@@ -242,31 +271,8 @@ export function ChatWindow({
     }
   }, [messages]);
 
-  // Auto-scroll to bottom only once on first load (never on load more, send, or poll)
-  useEffect(() => {
-    if (
-      !initialLoading &&
-      messages.length > 0 &&
-      !hasScrolledToBottomOnLoadRef.current
-    ) {
-      hasScrolledToBottomOnLoadRef.current = true;
-      setTimeout(() => {
-        messagesEndRef.current?.scrollIntoView({ behavior: "auto" });
-      }, 0);
-    }
-  }, [initialLoading, messages.length]);
-
-  const prevChatModeRef = useRef(chatMode);
-  useEffect(() => {
-    if (prevChatModeRef.current !== chatMode) {
-      prevChatModeRef.current = chatMode;
-      setTimeout(() => {
-        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-      }, 100);
-    }
-  }, [chatMode]);
-
-  // Infinite scroll - load older messages when scrolling to top
+  // Infinite scroll - load older messages when scrolling to top; also tracks
+  // whether the user is at the bottom, to drive the "jump to new messages" affordance below.
   useEffect(() => {
     const container = messagesContainerRef.current;
     if (!container) return;
@@ -281,6 +287,13 @@ export function ChatWindow({
       ) {
         loadOlderMessages();
       }
+
+      const distanceFromBottom =
+        container.scrollHeight - container.scrollTop - container.clientHeight;
+      const atBottom = distanceFromBottom < 80;
+      isAtBottomRef.current = atBottom;
+      setIsAtBottom(atBottom);
+      if (atBottom) setUnseenCount(0);
     };
 
     container.addEventListener("scroll", handleScroll);
@@ -289,7 +302,8 @@ export function ChatWindow({
 
   // Merge server messages with optimistic (sending) messages and sort by date
   // In notes mode: only show text notes (exclude voice notes so only text notes appear)
-  const displayMessages = (() => {
+  // Memoized so typing, opening dialogs, etc. don't re-filter/re-sort the whole list on every render.
+  const displayMessages = useMemo(() => {
     const fromServer = chatMode
       ? messages
       : messages.filter((msg) => msg.senderUserId === currentUserId);
@@ -302,7 +316,56 @@ export function ChatWindow({
         new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
     );
     return filtered;
-  })();
+  }, [messages, optimisticMessages, chatMode, currentUserId]);
+
+  // Auto-scroll to bottom only once on first load (never on load more, send, or poll)
+  useEffect(() => {
+    if (
+      !initialLoading &&
+      displayMessages.length > 0 &&
+      !hasScrolledToBottomOnLoadRef.current
+    ) {
+      hasScrolledToBottomOnLoadRef.current = true;
+      lastSeenMessageIdRef.current =
+        displayMessages[displayMessages.length - 1]?._id ?? null;
+      setTimeout(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: "auto" });
+      }, 0);
+    }
+  }, [initialLoading, displayMessages]);
+
+  const prevChatModeRef = useRef(chatMode);
+  useEffect(() => {
+    if (prevChatModeRef.current !== chatMode) {
+      prevChatModeRef.current = chatMode;
+      setUnseenCount(0);
+      setTimeout(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+      }, 100);
+    }
+  }, [chatMode]);
+
+  // Track messages arriving while the user is scrolled away from the bottom (reading older
+  // history), so we can show a "new messages" affordance instead of silently leaving them unseen.
+  useEffect(() => {
+    const last = displayMessages[displayMessages.length - 1];
+    if (!last) return;
+    if (last._id === lastSeenMessageIdRef.current) return;
+    const isGenuinelyNew = lastSeenMessageIdRef.current !== null;
+    lastSeenMessageIdRef.current = last._id;
+    if (
+      isGenuinelyNew &&
+      !isAtBottomRef.current &&
+      last.senderUserId !== currentUserId
+    ) {
+      setUnseenCount((c) => c + 1);
+    }
+  }, [displayMessages, currentUserId]);
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    setUnseenCount(0);
+  };
 
   const handleSendMessage = async () => {
     if (!text.trim() && !loading) return;
@@ -633,7 +696,7 @@ export function ChatWindow({
     }
   };
 
-  const handleReaction = async (messageId: string, emoji: string) => {
+  const handleReaction = useCallback(async (messageId: string, emoji: string) => {
     const prevMessage = displayMessages.find((m) => m._id === messageId);
     const prevReactions = prevMessage?.reactions || [];
 
@@ -684,9 +747,9 @@ export function ChatWindow({
       applyReactions(prevReactions);
       toast.error("Failed to add reaction");
     }
-  };
+  }, [displayMessages, currentUserId]);
 
-  const handleDeleteMessage = async (messageId: string) => {
+  const handleDeleteMessage = useCallback(async (messageId: string) => {
     if (!isAdmin) {
       toast.error("Only admin can delete messages");
       return;
@@ -713,9 +776,9 @@ export function ChatWindow({
     } finally {
       setDeletingMessage(null);
     }
-  };
+  }, [isAdmin, currentUserId, fetchMessages]);
 
-  const handleToggleChatMode = async () => {
+  const handleToggleChatMode = useCallback(async () => {
     if (!chatMode) {
       // Switching from Notes to Chat mode
       setChatMode(true);
@@ -733,7 +796,7 @@ export function ChatWindow({
       setChatMode(false);
       await fetchMessages(); // Refresh to show only notes
     }
-  };
+  }, [chatMode, currentUserId, fetchMessages]);
 
   const handleEmojiClick = (emojiData: EmojiClickData) => {
     setText((prev) => prev + emojiData.emoji);
@@ -823,25 +886,31 @@ export function ChatWindow({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allowBackgroundNotifications, currentUserId]);
 
-  // Poll for new messages when in chat mode (so you see messages without refreshing) or when auto-sync is on
+  // Poll for new messages when in chat mode (so you see messages without refreshing) or when auto-sync is on.
+  // Uses a self-scheduling timeout (waits for each poll to finish before scheduling the next) instead of
+  // a fixed setInterval, so slow/unreliable connections never stack up overlapping requests.
   useEffect(() => {
-    if (syncEnabled || chatMode) {
-      syncIntervalRef.current = setInterval(() => {
-        pollMessages();
-      }, 5000); // 5 seconds
+    if (!(syncEnabled || chatMode)) return;
 
-      return () => {
-        if (syncIntervalRef.current) {
-          clearInterval(syncIntervalRef.current);
-          syncIntervalRef.current = null;
-        }
-      };
-    } else {
+    let cancelled = false;
+
+    const tick = async () => {
+      if (cancelled) return;
+      await pollMessages();
+      if (!cancelled) {
+        syncIntervalRef.current = setTimeout(tick, 5000);
+      }
+    };
+
+    syncIntervalRef.current = setTimeout(tick, 5000);
+
+    return () => {
+      cancelled = true;
       if (syncIntervalRef.current) {
-        clearInterval(syncIntervalRef.current);
+        clearTimeout(syncIntervalRef.current);
         syncIntervalRef.current = null;
       }
-    }
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [syncEnabled, chatMode]);
 
@@ -1356,9 +1425,10 @@ export function ChatWindow({
       </Dialog>
 
       {/* Messages - overflow-anchor:auto keeps scroll stable; select-none prevents accidental text selection while scrolling */}
+      <div className="relative flex-1 min-h-0">
       <div
         ref={messagesContainerRef}
-        className="flex-1 overflow-y-auto p-4 min-h-0 select-none [overflow-anchor:auto]"
+        className="h-full overflow-y-auto p-4 select-none [overflow-anchor:auto]"
       >
         {initialLoading ? (
           <div className="flex items-center justify-center h-full">
@@ -1435,6 +1505,29 @@ export function ChatWindow({
             <div ref={messagesEndRef} />
           </>
         )}
+      </div>
+
+      {/* Jump-to-bottom affordance: shown when scrolled away from the latest message.
+          Since new messages never auto-scroll you away from what you're reading, this
+          keeps arrivals from going unnoticed while you're catching up on history. */}
+      {!initialLoading && !isAtBottom && displayMessages.length > 0 && (
+        <button
+          type="button"
+          onClick={scrollToBottom}
+          className="absolute bottom-4 right-4 z-20 flex items-center gap-1.5 rounded-full bg-primary text-primary-foreground shadow-lg px-3 py-2 text-xs font-medium transition-transform hover:scale-105 active:scale-95"
+        >
+          {unseenCount > 0 ? (
+            <>
+              <span className="inline-flex items-center justify-center h-4 min-w-4 px-1 rounded-full bg-primary-foreground text-primary text-[10px] font-semibold">
+                {unseenCount > 9 ? "9+" : unseenCount}
+              </span>
+              New messages
+            </>
+          ) : (
+            <ChevronDown className="h-4 w-4" />
+          )}
+        </button>
+      )}
       </div>
 
       {/* Input - fixed min height to reduce layout shift when typing */}

@@ -172,3 +172,24 @@
     background-clip: padding-box;
   }
 }
+
+@keyframes message-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-message-enter {
+  animation: message-enter 220ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-message-enter {
+    animation: none;
+  }
+}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { usePathname } from "next/navigation";
 import { PasscodeModal } from "@/components/PasscodeModal";
 import { UsernameModal } from "@/components/UsernameModal";
@@ -17,7 +17,6 @@ export default function Home() {
   const [showPasscodeModal, setShowPasscodeModal] = useState(false);
   const [loading, setLoading] = useState(true);
   const pathname = usePathname();
-  const wasVisibleRef = useRef(true);
 
   // Always require passcode on app load/reopen
   useEffect(() => {
@@ -43,32 +42,45 @@ export default function Home() {
     initializeApp();
   }, []);
 
-  // Require passcode on page visibility change (tab switch, minimize) - unless user disabled in Settings
+  // Require passcode whenever the app leaves the foreground (tab switch, minimize,
+  // task-switch away from the installed PWA) - unless user disabled in Settings.
+  //
+  // We lock the moment the app goes to the BACKGROUND rather than waiting to react
+  // when it comes back to the foreground. Installed PWAs can be frozen/suspended by
+  // the OS and later resumed without a fresh page load and without always firing a
+  // reliable "visible" transition (or React re-running its effects in time), which
+  // let the previously-verified in-memory state render the chat before the recheck
+  // could kick in. Locking on the way out removes that window entirely: the modal
+  // is already showing by the time the app is visible again.
   useEffect(() => {
-    const skipRecheck =
+    const isSkipRecheckEnabled = () =>
       localStorage.getItem("chatSkipSessionRecheck") === "true";
 
+    const lock = () => {
+      if (isSkipRecheckEnabled()) return;
+      setPasscodeVerified(false);
+      setShowPasscodeModal(true);
+    };
+
     const handleVisibilityChange = () => {
-      if (document.visibilityState === "visible") {
-        if (
-          wasVisibleRef.current === false &&
-          passcodeVerified &&
-          !skipRecheck
-        ) {
-          setPasscodeVerified(false);
-          setShowPasscodeModal(true);
-        }
-        wasVisibleRef.current = true;
-      } else {
-        wasVisibleRef.current = false;
+      if (document.visibilityState === "hidden") {
+        lock();
       }
     };
 
-    wasVisibleRef.current = document.visibilityState === "visible";
+    // pagehide covers cases (notably iOS PWAs) where visibilitychange doesn't fire
+    // reliably before the page is frozen/bfcached.
+    const handlePageHide = () => {
+      lock();
+    };
+
     document.addEventListener("visibilitychange", handleVisibilityChange);
-    return () =>
+    window.addEventListener("pagehide", handlePageHide);
+    return () => {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
-  }, [passcodeVerified]);
+      window.removeEventListener("pagehide", handlePageHide);
+    };
+  }, []);
 
   // Require passcode on route/pathname change - unless user disabled in Settings
   useEffect(() => {

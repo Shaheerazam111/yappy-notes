@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { memo, useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Trash2,
@@ -67,7 +67,7 @@ interface MessageBubbleProps {
   showSenderInitial?: boolean; // Show sender initial only on last message of a consecutive group from same sender
 }
 
-export function MessageBubble({
+export const MessageBubble = memo(function MessageBubble({
   message,
   currentUserId,
   currentUserName,
@@ -328,7 +328,7 @@ export function MessageBubble({
 
       <div
         ref={messageRef}
-        className={`flex flex-col mb-2 group w-full ${
+        className={`flex flex-col mb-2 group w-full animate-message-enter ${
           isNoteMode
             ? "items-center"
             : isCurrentUser
@@ -645,4 +645,4 @@ export function MessageBubble({
       </div>
     </>
   );
-}
+});
